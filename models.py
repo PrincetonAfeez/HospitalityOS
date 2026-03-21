@@ -1,4 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
+# Import your new settings
+from settings.restaurant_defaults import TAX_RATE
 
 class MenuItem:
     def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
@@ -33,7 +35,8 @@ class Menu:
 class Cart:
     def __init__(self):
         self.items = []
-        self.tax_rate = Decimal("0.08") # 8% Tax
+        # Task 4: Link to settings.py
+        self.tax_rate = Decimal(str(TAX_RATE))
 
     def add_to_cart(self, item: MenuItem):
         if item.line_inv > 0:
