@@ -46,11 +46,11 @@ class Cart:
         return self.subtotal + self.sales_tax
     
     class Transaction:
-    def __init__(self, cart: Cart, table_num: int):
-        self.cart = cart
-        self.table_num = table_num
-        self.tip = Decimal("0.00")
-        self.split_count = 1
+        def __init__(self, cart: Cart, table_num: int):
+            self.cart = cart
+            self.table_num = table_num
+            self.tip = Decimal("0.00")
+            self.split_count = 1
 
     def apply_tip(self, amount: str):
         """Processes tip as a percentage (e.g., '20%') or a flat rate (e.g., '10')."""
