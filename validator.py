@@ -1,8 +1,7 @@
-#Validator for all user input
-#Adding RegEx
 
 import datetime
 import re
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Add this import
 
 def get_name(prompt):
     # Pattern: Allows letters, spaces, hyphens, and apostrophes.
@@ -62,16 +61,14 @@ def get_int(prompt, min_val=None, max_val=None, exact_len=None, allow_zero=False
 def get_float(prompt, min_val=None, max_val=None):
     while True:
         try:
-            val = float(input(prompt))
-            if min_val is not None and val < min_val:
+            # Convert input to Decimal immediately
+            val = Decimal(input(prompt).replace("$", "")) 
+            if min_val is not None and val < Decimal(str(min_val)):
                 print(f"    ❌ Error: Value must be at least {min_val}.")
                 continue
-            if max_val is not None and val > max_val:
-                print(f"    ❌ Error: Value cannot exceed {max_val}.")
-                continue
             return val
-        except ValueError:
-            print("    ❌ Invalid Input: Please enter a number (e.g., 7.5).")
+        except:
+            print("    ❌ Invalid Input: Please enter a number (e.g., 7.50).")
             
 def get_date(prompt):
     while True:
@@ -138,10 +135,6 @@ def get_yes_no(prompt):
         print("Error: Please answer 'yes' or 'no'.")
 
 def get_tip_logic(prompt, subtotal):
-    """
-    Special validator for POS systems. 
-    Parses inputs like '10%' or '$10' and returns the float dollar amount.
-    """
     while True:
         get_tip = input(prompt).strip()
         if not get_tip:
@@ -150,16 +143,18 @@ def get_tip_logic(prompt, subtotal):
         try:
             # Percentage logic
             if "%" in get_tip:
-                val = float(get_tip.replace("%", ""))
+                val = Decimal(get_tip.replace("%", ""))
                 if val >= 0:
-                    return subtotal * (val / 100)
+                    return (subtotal * (val / 100)).quantize(Decimal("0.01"), ROUND_HALF_UP)
             
-            # Dollar logic
-            elif "$" in get_tip:
-                val = float(get_tip.replace("$", ""))
-                if val >= 0:
-                    return val
+            # Dollar logic (handles '$' if present)
+            clean_val = get_tip.replace("$", "")
+            val = Decimal(clean_val)
+            if val >= 0:
+                return val.quantize(Decimal("0.01"), ROUND_HALF_UP)
             
             print("Error: Please include % or $ (e.g., '15%' or '$5').")
-        except ValueError:
+            
+        # This catches BOTH standard value errors AND decimal-specific errors
+        except (ValueError, InvalidOperation): 
             print("Error: Please enter a numeric value with % or $.")
