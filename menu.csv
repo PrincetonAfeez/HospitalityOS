@@ -1,0 +1,41 @@
+category,name,unit_price,line_inv,walk_in_inv,freezer_inv,par_level
+Shareables,Baked Jumbo Wings,18.0,10,5,5,20
+Shareables,Buffalo Cauliflower,15.0,10,5,5,20
+Shareables,Charcuterie Board,25.0,10,5,5,20
+Shareables,Crispy Burrata,23.0,10,5,5,20
+Shareables,Four Cheese Dip,18.0,10,5,5,20
+Shareables,Four Cheese Mac,15.0,10,5,5,20
+Shareables,Guac & Chips,15.0,10,5,5,20
+Shareables,Hummus and Pita,22.0,10,5,5,20
+Shareables,Rustic Bread,19.0,10,5,5,20
+Shareables,Short Rib Fries,23.0,10,5,5,20
+Shareables,Waygu Meatballs,20.0,10,5,5,20
+Entrées,Branzino,38.0,10,5,5,20
+Entrées,Crusted Tuna,25.0,10,5,5,20
+Entrées,Duck Confit,32.0,10,5,5,20
+Entrées,Filet Steak Sliders,27.0,10,5,5,20
+Entrées,Korean Short Ribs,29.0,10,5,5,20
+Entrées,Lamb Shank,56.0,10,5,5,20
+Entrées,Rack of Lamb,34.0,10,5,5,20
+Entrées,Roasted Greek Chicken,29.0,10,5,5,20
+Entrées,Seabass Ratatouille,36.0,10,5,5,20
+Entrées,Seafood Pasta,27.0,10,5,5,20
+Entrées,Short Rib Pappardelle,32.0,10,5,5,20
+Entrées,Steak Au Poivre,48.0,10,5,5,20
+Entrées,Steak Frites,48.0,10,5,5,20
+Entrées,Wagyu Burger,26.0,10,5,5,20
+Sides,Crisps,12.0,10,5,5,20
+Sides,French Fries,12.0,10,5,5,20
+Sides,Greek Salad,10.0,10,5,5,20
+Sides,Sweet Fries,12.0,10,5,5,20
+Sides,Truffle Fries,15.0,10,5,5,20
+Salads,Asian Chicken Salad,20.0,10,5,5,20
+Salads,English Garden Salad,18.0,10,5,5,20
+Salads,Goat Cheese Beets,18.0,10,5,5,20
+Salads,Heirloom Salad,15.0,10,5,5,20
+Desserts,Apple Streudel,14.0,10,5,5,20
+Desserts,Brownie,14.0,10,5,5,20
+Desserts,Burbon Bread Pudding,14.0,10,5,5,20
+Desserts,Cheesecake,14.0,10,5,5,20
+Desserts,Creme Brulee,14.0,10,5,5,20
+Desserts,Tiramisu,14.0,10,5,5,20
