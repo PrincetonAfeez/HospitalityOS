@@ -1,17 +1,3 @@
-<<<<<<< HEAD
-# =================================================================
-# CONFIGURATION & DATA INITIALIZATION
-# =================================================================
-
-# The menu stores our food items (Keys) and their prices (Values)
-menu = {
-    "Chicken": 29.00,
-    "Fish": 38.00,
-    "Pork": 28.00,
-    "Steak": 45.00,
-    "Tofu": 25.00
-}
-=======
 # Project: "The Digital POS System."
 # Focus: Using Packages & Data Persistence
 # New Feature: Decimal module for financial precision
@@ -61,164 +47,10 @@ def load_menu(filename="menu.csv"):
 
 # Load the CSV data once at the start
 menu = load_menu()
->>>>>>> master
 
 # Standard tip options to show the user before they pay
 tip_percentages = {"18%": 0.18, "20%": 0.20, "22%": 0.22}
 
-<<<<<<< HEAD
-# Constants and trackers
-tax_rate = 0.095  # 9.5% sales tax as a decimal
-cart = {}         # Dictionary to track: { "Food Name": Quantity }
-subtotal = 0.0    # Tracks the total cost of food before tax/tip
-
-# Ask for table number first so it can be saved for the final receipt
-table_number = input("Enter Table Number: ").strip()
-
-# =================================================================
-# PHASE 1: THE ORDERING PROCESS (ADD / REMOVE / DONE)
-# =================================================================
-
-# Print a visual menu for the user to read
-print("\n" + "="*25)
-print(f"{'MENU':^25}")
-print("="*25)
-for item, price in menu.items():
-    print(f"{item:<15} ${price:>6.2f}")
-print("="*25)
-
-print("\nInstructions: Type item name to add, 'Remove' to delete, or 'Done' to finish.")
-
-while True:
-    # Get user input and clean it up (remove spaces, capitalize first letter)
-    user_choice = input("Order item: ").strip().title()
-
-    # Exit the loop if the user is finished
-    if user_choice in ["Done", "Checkout"]:
-        break
-    
-    # --- SUB-SECTION: REMOVING ITEMS ---
-    elif user_choice == "Remove":
-        # First, check if the cart even has items to remove
-        if not cart:
-            print("Your cart is empty! Nothing to remove.")
-            continue
-            
-        item_to_remove = input("Which item would you like to remove? ").strip().title()
-        
-        # Check if the requested item is actually in the user's cart
-        if item_to_remove in cart:
-            # Subtract the single item price from the running subtotal
-            subtotal -= menu[item_to_remove]
-            
-            # Decrease the quantity count by 1
-            cart[item_to_remove] -= 1
-            
-            # If quantity hits 0, delete the item key so it doesn't show up on receipt
-            if cart[item_to_remove] == 0:
-                del cart[item_to_remove]
-                
-            print(f"-> Removed {item_to_remove}. Updated Subtotal: ${subtotal:.2f}")
-        else:
-            print(f"Error: '{item_to_remove}' is not in your cart.")
-
-    # --- SUB-SECTION: ADDING ITEMS ---
-    elif user_choice in menu:
-        # Increase item count: .get looks for the item, defaults to 0 if not found, then adds 1
-        cart[user_choice] = cart.get(user_choice, 0) + 1
-        # Add the price of one unit to the subtotal
-        subtotal += menu[user_choice]
-        print(f"-> Added {user_choice}. Current Subtotal: ${subtotal:.2f}")
-        
-    else:
-        # Fallback if the user types something that isn't on the menu
-        print(f"Sorry, '{user_choice}' isn't on the menu.")
-
-# Final safety check: Don't proceed if the user ordered nothing
-if not cart:
-    print("\nYour cart is empty. Goodbye!")
-    exit()
-
-# =================================================================
-# PHASE 2: TIP SELECTION & VALIDATION
-# =================================================================
-
-# Display suggested tip amounts based on the food subtotal
-print("\n----- Suggested Tips -----")
-for label, percent in tip_percentages.items():
-    print(f"{label}: ${subtotal * percent:.2f}")
-
-while True:
-    get_tip = input("\nEnter tip (e.g., '10%' or '$10'): ").strip()
-    try:
-        # Check for percentage symbol to determine math logic
-        if "%" in get_tip:
-            val = float(get_tip.replace("%", ""))
-            if 0 <= val <= 100:
-                tip_amount = subtotal * (val / 100)
-                break
-        
-        # Check for dollar sign for flat-rate tips
-        elif "$" in get_tip:
-            tip_amount = float(get_tip.replace("$", ""))
-            if tip_amount >= 0:
-                break
-        
-        print("Please enter a valid tip with % or $.")
-    except ValueError:
-        # Triggers if the user types text instead of a number
-        print("Invalid input. Please enter a number.")
-
-# =================================================================
-# PHASE 3: BILL SPLITTING
-# =================================================================
-
-while True:
-    try:
-        people = int(input("How many people are splitting? "))
-        if people >= 1: # You must have at least one person to pay
-            break
-        print("Need at least 1 person.")
-    except ValueError:
-        print("Please enter a whole number (e.g., 2).")
-
-# =================================================================
-# PHASE 4: FINAL CALCULATIONS & FORMATTING
-# =================================================================
-
-# Calculate tax and total
-sales_tax = subtotal * tax_rate
-total_bill = subtotal + sales_tax + tip_amount
-per_person = total_bill / people
-
-# PRINT THE RECEIPT
-print("\n" + "="*35)
-print(f"{'RESTAURANT BILL':^35}") # ^35 centers text in a 35-character block
-print(f"{'Table: ' + table_number:^35}") 
-print("="*35)
-
-# Loop through the cart dictionary to print each item, its quantity, and total
-for item, count in cart.items():
-    # Calculate the cost for this specific item (price * quantity)
-    line_total = menu[item] * count
-    # :<17 left-aligns the name, :>8.2f right-aligns the price
-    print(f"{count}x {item:<17} ${line_total:>8.2f}")
-
-print("-" * 35)
-print(f"Subtotal:            ${subtotal:>8.2f}")
-print(f"Sales Tax (9.5%):    ${sales_tax:>8.2f}")
-print(f"Tip:                 ${tip_amount:>8.2f}")
-print("-" * 35)
-print(f"TOTAL BILL:          ${total_bill:>8.2f}")
-print("-" * 35)
-
-# Conditional message: only show splitting info if there's more than one person
-if people > 1:
-    print(f"Each Person ({people}):      ${per_person:>8.2f}")
-else:
-    print("Paid in full by 1 person.")
-print("="*35)
-=======
 def initialize_state():
     """
     Prompt to decide if we start fresh from menu.csv 
@@ -459,4 +291,3 @@ if __name__ == "__main__":
     
     test_table = get_int("Enter Test Table Number: ", min_val=1)
     run_pos(test_table)
->>>>>>> master
