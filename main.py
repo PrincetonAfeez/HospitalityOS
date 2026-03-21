@@ -14,6 +14,24 @@ def display_header(table_num, cart):
     print(f"Items in Cart: {len(cart.items):<15} Subtotal: ${cart.subtotal:>8.2f}")
     print("-" * 45)
 
+def display_menu(menu_obj):
+    """Task 2: Dedicated function for menu display"""
+    print("\n" + "-"*15 + " CURRENT MENU " + "-"*15)
+    # Grouping by category (optional but professional)
+    for item in menu_obj.items:
+        print(item)
+    print("-" * 44)
+
+def view_cart(cart):
+    """Task 7: Detailed view of current order"""
+    if not cart.items:
+        print("\n🛒 Your cart is currently empty.")
+    else:
+        print("\n--- CURRENT ORDER ---")
+        for item in cart.items:
+            print(f"- {item.name:<20} ${item.price:>8.2f}")
+        print(f"\nSubtotal: ${cart.subtotal:>8.2f}")
+
 def main():
     # 1. Initialize System & Load Shared Brain
     menu = load_menu_from_csv('menu.csv')
@@ -36,13 +54,12 @@ def main():
         choice = input("Selection > ").strip().upper()
         
         if choice == '1':
-            print("\n--- CURRENT MENU ---")
-            for item in menu.items:
-                print(item)
-            input("\nPress Enter to return...")
+            display_menu(menu) # Task 2 call
+            input("\nPress Enter to return to main menu...")
+
                 
         elif choice == '2':
-            item_name = input("Enter item name exactly: ").strip()
+            item_name = get_name("Enter item name exactly: ")
             found_item = menu.find_item(item_name)
             if found_item:
                 cart.add_to_cart(found_item)
