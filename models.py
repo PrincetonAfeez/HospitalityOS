@@ -44,3 +44,56 @@ class Cart:
     @property
     def grand_total(self) -> Decimal:
         return self.subtotal + self.sales_tax
+    
+    class Transaction:
+    def __init__(self, cart: Cart, table_num: int):
+        self.cart = cart
+        self.table_num = table_num
+        self.tip = Decimal("0.00")
+        self.split_count = 1
+
+    def apply_tip(self, amount: str):
+        """Processes tip as a percentage (e.g., '20%') or a flat rate (e.g., '10')."""
+        try:
+            if "%" in amount:
+                percent = Decimal(amount.replace("%", "")) / 100
+                self.tip = (self.cart.subtotal * percent).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            else:
+                self.tip = Decimal(amount).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            return True
+        except:
+            print("Invalid tip format.")
+            return False
+
+    @property
+    def final_total(self) -> Decimal:
+        return self.cart.grand_total + self.tip
+
+    @property
+    def per_person(self) -> Decimal:
+        return (self.final_total / Decimal(str(self.split_count))).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+    def generate_receipt(self):
+        print("\n" + "="*35)
+        print(f"{'HOSPITALITY OS RECEIPT':^35}")
+        print(f"{'Table: ' + str(self.table_num):^35}")
+        print("="*35)
+        
+        # Count identical items for receipt display
+        from collections import Counter
+        item_counts = Counter(item.name for item in self.cart.items)
+        
+        for name, count in item_counts.items():
+            # Find the first instance to get the price
+            price = next(item.price for item in self.cart.items if item.name == name)
+            print(f"{count}x {name:<20} ${price * count:>8.2f}")
+
+        print("-" * 35)
+        print(f"Subtotal:            ${self.cart.subtotal:>8.2f}")
+        print(f"Tax (8%):            ${self.cart.sales_tax:>8.2f}")
+        print(f"Tip:                 ${self.tip:>8.2f}")
+        print("-" * 35)
+        print(f"TOTAL:               ${self.final_total:>8.2f}")
+        if self.split_count > 1:
+            print(f"Each ({self.split_count} ways):      ${self.per_person:>8.2f}")
+        print("="*35 + "\n")
