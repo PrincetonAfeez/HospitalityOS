@@ -1,62 +1,46 @@
-#feat: initialize project structure and models file
+from decimal import Decimal, ROUND_HALF_UP
 
 class MenuItem:
-    def __init__(self, category: str, name: str, price: float, line_inv: int, walk_in: int, freezer: int, par: int):
+    def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
         self.category = category
         self.name = name
-        self.price = float(price)
-        # Inventory tracking
+        self.price = Decimal(str(price)) # Use Decimal for money
         self.line_inv = int(line_inv)
         self.walk_in_inv = int(walk_in)
         self.freezer_inv = int(freezer)
         self.par_level = int(par)
 
     @property
-    def total_inventory(self) -> int:
+    def total_inventory(self):
         return self.line_inv + self.walk_in_inv + self.freezer_inv
 
     def __str__(self):
-        stock_status = "INSTOCK" if self.total_inventory > 0 else "OUT OF STOCK"
-        return f"[{self.category:10}] {self.name:25} ${self.price:>6.2f} | Stock: {self.total_inventory} ({stock_status})"
-
-class Menu:
-    def __init__(self):
-        self.items = []
-
-    def add_item(self, item: MenuItem):
-        self.items.append(item)
-
-    def find_item(self, name: str) -> MenuItem:
-        """Search for an item by name (case-insensitive)."""
-        for item in self.items:
-            if item.name.lower() == name.lower():
-                return item
-        return None
+        return f"[{self.category:10}] {self.name:25} ${self.price:>6.2f}"
 
 class Cart:
     def __init__(self):
         self.items = []
-        self.tax_rate = 0.08  # 8% Tax
+        self.tax_rate = Decimal("0.08") # 8% Tax
 
     def add_to_cart(self, item: MenuItem):
-        """
-        Logic: 
-        1. Check if total_inventory > 0.
-        2. If yes, add to self.items and subtract 1 from item.line_inv.
-        3. If no, print an 'Out of Stock' error.
-        """
-        if item.total_inventory > 0:
+        # FEATURE: Inventory Guardrail (from original script)
+        if item.line_inv > 0:
             self.items.append(item)
-            item.line_inv -= 1 
-            print(f"Added {item.name} to cart.")
+            item.line_inv -= 1 # Deduct from 'Line' first
+            print(f"✅ Added {item.name}. (Line Stock: {item.line_inv})")
+        elif item.total_inventory > 0:
+            print(f"⚠️ {item.name} empty on line! Restock from Walk-in.")
         else:
-            print(f"Error: {item.name} is out of stock!")
+            print(f"❌ CANNOT ADD: {item.name} is 86'd!")
 
     @property
-    def subtotal(self) -> float:
-        return sum(item.price for item in self.items)
+    def subtotal(self) -> Decimal:
+        return sum((item.price for item in self.items), Decimal("0.00"))
 
     @property
-    def grand_total(self) -> float:
-        return self.subtotal * (1 + self.tax_rate)
-    
+    def sales_tax(self) -> Decimal:
+        return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @property
+    def grand_total(self) -> Decimal:
+        return self.subtotal + self.sales_tax
