@@ -92,12 +92,15 @@ class Cart:
         return False
 
     @property
+    @property
     def subtotal(self) -> Decimal:
         total = Decimal("0.00")
         for item in self.items:
+            # Base item price
             total += item.price
-            # Add price of all modifiers attached to the item
-            total += sum(m.price for m in item.modifiers)
+            # Add prices of all attached modifiers
+            if hasattr(item, 'modifiers'):
+                total += sum((m.price for m in item.modifiers), Decimal("0.00"))
         return total
     
     @property
