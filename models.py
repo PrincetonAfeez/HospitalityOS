@@ -146,3 +146,21 @@ class Transaction:
         if self.split_count > 1:
             print(f"Each ({self.split_count} ways):      ${self.per_person:>8.2f}")
         print("="*35 + "\n")
+
+class InventoryManager:
+    def __init__(self, menu):
+        self.menu = menu
+
+    def get_prep_list(self):
+        """Task 5: Returns items where line inventory is below par."""
+        prep_list = []
+        for item in self.menu.items:
+            if item.line_inv < item.par_level:
+                gap = item.par_level - item.line_inv
+                prep_list.append({
+                    "name": item.name,
+                    "current": item.line_inv,
+                    "par": item.par_level,
+                    "need": gap
+                })
+        return prep_list
