@@ -2,7 +2,7 @@ import csv
 import json
 import os
 from decimal import Decimal
-from models import MenuItem, Menu
+from models import MenuItem, Menu, staff
 
 def load_menu_from_csv(file_path: str) -> Menu:
     restaurant_menu = Menu()
@@ -67,3 +67,17 @@ def initialize_system_state(menu):
     else:
         print("🌙 Continuing Current Shift...")
         return load_system_state(menu)
+
+def validate_staff_login(staff_id, filename="staff.csv"):
+    """Task 5: Look up staff member by ID and return a Staff object."""
+    if not os.path.exists(filename):
+        print(f"⚠️ Error: {filename} missing.")
+        return None
+        
+    with open(filename, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row['staff_id'].strip().upper() == staff_id.strip().upper():
+                # We return the Staff object directly for use in the POS
+                return Staff(row['staff_id'], row['name'], row['dept'])
+    return None
