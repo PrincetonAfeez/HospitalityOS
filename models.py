@@ -92,7 +92,6 @@ class Cart:
         return False
 
     @property
-    @property
     def subtotal(self) -> Decimal:
         total = Decimal("0.00")
         for item in self.items:
@@ -160,12 +159,18 @@ class Transaction:
         print(f"{'Table: ' + str(self.table_num):^35}")
         print("="*35)
         
-        from collections import Counter
-        item_counts = Counter(item.name for item in self.cart.items)
-        
-        for name, count in item_counts.items():
-            price = next(item.price for item in self.cart.items if item.name == name)
-            print(f"{count}x {name:<20} ${price * count:>8.2f}")
+        # We loop through items directly now to show individual modifiers
+        for item in self.cart.items:
+            print(f"1x {item.name:<20} ${item.price:>8.2f}")
+            
+            # --- Task 5: Show Modifiers ---
+            if hasattr(item, 'modifiers'):
+                for mod in item.modifiers:
+                    print(f"   + {mod.name:<17} ${mod.price:>8.2f}")
+            
+            # --- Task 6 Preview: Show Notes (if any) ---
+            if hasattr(item, 'kitchen_notes') and item.kitchen_notes:
+                print(f"     (Note: {item.kitchen_notes})")
 
         print("-" * 35)
         print(f"Subtotal:            ${self.cart.subtotal:>8.2f}")
