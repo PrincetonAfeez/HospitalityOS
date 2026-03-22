@@ -26,12 +26,14 @@ class MenuItem:
         self.modifiers = []  # Task 1: List of Modifier objects
         self.kitchen_notes = "" # Task 6: Custom notes
     
-    def add_modifier(self, mod: Modifier):
-        # Task 8: Modifier Par check (Max 3)
+    def add_modifier(self, mod: 'Modifier'):
+        """Task 8: Prevent adding more than 3 modifiers to a single item."""
         if len(self.modifiers) < 3:
             self.modifiers.append(mod)
+            print(f"✨ Added modifier: {mod.name}")
         else:
-            print("⚠️ Max modifiers (3) reached for this item.")
+            print(f"⚠️ Limit reached! Cannot add '{mod.name}'. (Max 3 modifiers)")
+            
 
     def to_dict(self):
         """Converts MenuItem to a dictionary for JSON storage."""
