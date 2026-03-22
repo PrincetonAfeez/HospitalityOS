@@ -2,7 +2,7 @@ import csv
 import json
 import os
 from decimal import Decimal
-from models import MenuItem, Menu, staff
+from models import MenuItem, Menu, Staff
 
 def load_menu_from_csv(file_path: str) -> Menu:
     restaurant_menu = Menu()
@@ -10,10 +10,12 @@ def load_menu_from_csv(file_path: str) -> Menu:
         with open(file_path, mode='r', newline='', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
+                # FIXED: Ensure key matches your CSV headers (price vs unit_price)
+                # and ensures all fields are passed correctly
                 item = MenuItem(
                     category=row['category'],
                     name=row['name'],
-                    price=row['unit_price'],
+                    price=row['price'], 
                     line_inv=row['line_inv'],
                     walk_in=row['walk_in_inv'],
                     freezer=row['freezer_inv'],
@@ -21,63 +23,75 @@ def load_menu_from_csv(file_path: str) -> Menu:
                 )
                 restaurant_menu.add_item(item)
     except FileNotFoundError:
-        print(f"Error: {file_path} not found.")
+        print(f"❌ Error: {file_path} not found.")
+    except KeyError as e:
+        print(f"❌ CSV Header Error: Missing column {e}")
     return restaurant_menu
 
 def save_system_state(menu, net_sales, filename="restaurant_state.json"):
+    """Saves the current sales and inventory breakdown to the 'Shared Brain'."""
     state = {
         "net_sales": float(net_sales),
         "inventory": {item.name: {
-            "line": item.line_inv,
-            "walk_in": item.walk_in_inv,
-            "freezer": item.freezer_inv
+            "line": int(item.line_inv),
+            "walk_in": int(item.walk_in_inv),
+            "freezer": int(item.freezer_inv)
         } for item in menu.items}
     }
     with open(filename, "w") as f:
         json.dump(state, f, indent=4)
 
 def load_system_state(menu, filename="restaurant_state.json"):
+    """Loads previous session data into the menu objects."""
     try:
         with open(filename, "r") as f:
             state = json.load(f)
+            # Restore inventory counts to objects
             for item in menu.items:
-                if item.name in state["inventory"]:
+                if item.name in state.get("inventory", {}):
                     inv = state["inventory"][item.name]
                     item.line_inv = inv["line"]
                     item.walk_in_inv = inv["walk_in"]
                     item.freezer_inv = inv["freezer"]
             return Decimal(str(state.get("net_sales", "0.00")))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return Decimal("0.00")
 
 def initialize_system_state(menu):
-    """Restore your original 'New Service Day' logic"""
+    """Handles the start-of-shift logic."""
     filename = "restaurant_state.json"
     print("\n" + "="*35)
     print(f"{'SYSTEM INITIALIZATION':^35}")
     print("="*35)
     
+    # We ask the user to decide the state of the day
     choice = input("Is this a NEW service day? (yes/no): ").strip().lower()
 
     if choice == "yes":
         print("☀️  Starting New Service Day. Resetting inventory...")
-        # Create fresh state based on menu objects
+        # We save the baseline state immediately
         save_system_state(menu, Decimal("0.00"))
         return Decimal("0.00")
     else:
-        print("🌙 Continuing Current Shift...")
-        return load_system_state(menu)
+        if os.path.exists(filename):
+            print("🌙 Continuing Current Shift...")
+            return load_system_state(menu)
+        else:
+            print("⚠️  No previous state found. Starting fresh.")
+            return Decimal("0.00")
 
 def validate_staff_login(staff_id, filename="staff.csv"):
-    """Task 5: Look up staff member by ID and return a Staff object."""
+    """Task 5: Look up staff member by ID with error protection."""
     if not os.path.exists(filename):
         print(f"⚠️ Error: {filename} missing.")
         return None
         
-    with open(filename, "r") as f:
+    with open(filename, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        # Handle potential whitespace in CSV headers
+        reader.fieldnames = [name.strip() for name in reader.fieldnames]
+        
         for row in reader:
             if row['staff_id'].strip().upper() == staff_id.strip().upper():
-                # We return the Staff object directly for use in the POS
                 return Staff(row['staff_id'], row['name'], row['dept'])
     return None
