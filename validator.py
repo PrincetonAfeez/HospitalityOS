@@ -158,3 +158,17 @@ def get_tip_logic(prompt, subtotal):
         # This catches BOTH standard value errors AND decimal-specific errors
         except (ValueError, InvalidOperation): 
             print("Error: Please enter a numeric value with % or $.")
+
+def get_staff_id(prompt):
+    """Task 9: RegEx Validation for Staff IDs (Format: EMP-00)"""
+    # Pattern: Starts with EMP, followed by a dash, followed by 1 or more digits
+    staff_id_regex = r"^EMP-\d+$"
+    
+    while True:
+        # We .upper() it here so the user can type 'emp-01' and it still passes
+        staff_id = input(prompt).strip().upper()
+        
+        if re.fullmatch(staff_id_regex, staff_id):
+            return staff_id
+            
+        print("❌ Error: Invalid ID Format. Please use 'EMP-' followed by digits (e.g., EMP-01).")
