@@ -243,6 +243,22 @@ class Guest(Person):
         self.allergies = allergies if allergies else [] # List of strings
         self.loyalty_points = 0 # Tracks rewards for Block 4
 
+class Guest(Person):
+    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
+        super().__init__(first_name, last_name)
+        self.guest_id = guest_id
+        self.phone = phone
+        self.allergies = allergies if allergies else []
+        self.loyalty_points = 0 
+        self.is_tax_exempt = False # Requirement 40: Tax Exempt Flag
+
+    def add_loyalty_points(self, amount):
+        """Requirement 8: Simple rewards logic based on spend."""
+        points = int(amount // 10) # 1 point per $10 spent
+        self.loyalty_points += points
+        print(f"⭐ {self.full_name} earned {points} points! Total: {self.loyalty_points}")
+        
+
 class Staff(Person):
     """
     Represents an employee.
