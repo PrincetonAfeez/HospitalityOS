@@ -5,7 +5,7 @@ from database import load_menu_from_csv, initialize_system_state, save_system_st
 from models import Cart, Transaction
 from validator import get_int, get_name, get_yes_no, get_email, get_float
 from storage import save_to_json
-from models import InventoryManager # Needed for Task 10
+from models import Staff, InventoryManager # Needed for Task 10
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -39,6 +39,18 @@ def main():
     # 1. Initialize System & Load Shared Brain
     menu = load_menu_from_csv('menu.csv')
     daily_net_sales = initialize_system_state(menu)
+
+    # --- Staff Login ---
+    print("--- STAFF LOGIN ---")
+    active_server = None
+    while not active_server:
+        login_id = input("Enter Server ID (e.g., EMP-01): ").strip().upper()
+        # For now, we'll simulate a check, but Task 5 will link to CSV
+        if login_id.startswith("EMP"):
+            active_server = Staff(login_id, "Jane Doe", "Server") # Placeholder
+            print(f"Welcome, {active_server.name}!")
+        else:
+            print("❌ Invalid ID Format. Try again.")
     
     # 2. Intake
     table_num = get_int("Enter Table Number: ", min_val=1)
