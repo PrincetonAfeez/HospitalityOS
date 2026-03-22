@@ -1,7 +1,7 @@
 import os
 import re
 from decimal import Decimal
-from database import load_menu_from_csv, initialize_system_state, save_system_state
+from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
 from models import Cart, Transaction
 from validator import get_int, get_name, get_yes_no, get_email, get_float
 from storage import save_to_json
@@ -52,6 +52,17 @@ def main():
         else:
             print("❌ Invalid ID Format. Try again.")
     
+        # Inside your main() after login:
+        active_server = validate_staff_login(login_id)
+
+        # When saving state (Task 6):
+        state_data = {
+            "active_server": active_server.name,
+            "server_id": active_server.staff_id,
+            "net_sales": float(daily_net_sales)
+        }
+        save_to_json(state_data, "restaurant_state.json")
+
     # 2. Intake
     table_num = get_int("Enter Table Number: ", min_val=1)
     cart = Cart()
