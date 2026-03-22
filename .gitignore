@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Hospitality OS Data
+restaurant_state.json
+transaction_log.json
+*.csv
