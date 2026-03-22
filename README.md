@@ -59,3 +59,8 @@ classDiagram
     Cart "1" o-- "many" MenuItem
     Transaction "1" -- "1" Cart
 
+### 🔑 Staff & Auditor Integration (Day 6)
+- **Mandatory Login:** System requires a valid `staff_id` (RegEx: `EMP-\d+`) verified against `staff.csv`.
+- **Shared Brain Sync:** Every login and transaction updates `restaurant_state.json` with the active server's ID and real-time net sales.
+- **Security Audit:** All item removals (voids) are timestamped and logged to `security.log` with the responsible staff member's name.
+- **Labor Alerts:** POS provides real-time warnings if sales-to-labor ratios exceed 20%.
