@@ -33,7 +33,6 @@ class MenuItem:
             print(f"✨ Added modifier: {mod.name}")
         else:
             print(f"⚠️ Limit reached! Cannot add '{mod.name}'. (Max 3 modifiers)")
-            
 
     def to_dict(self):
         """Converts MenuItem to a dictionary for JSON storage."""
@@ -41,7 +40,7 @@ class MenuItem:
             "category": self.category,
             "name": self.name,
             "price": str(self.price),  # JSON doesn't support Decimal, convert to string
-            "modifiers": [m.to_dict() for m in self.modifiers],
+            "modifiers": [m.to_dict() for m in self.modifiers], # Nested serialization
             "notes": self.kitchen_notes,
             "line_inv": self.line_inv,
             "walk_in_inv": self.walk_in_inv,
@@ -49,6 +48,7 @@ class MenuItem:
             "par_level": self.par_level,
             "total_inventory": self.total_inventory
         }
+    
     @property
     def total_inventory(self):
         return self.line_inv + self.walk_in_inv + self.freezer_inv
