@@ -257,7 +257,18 @@ class Guest(Person):
         points = int(amount // 10) # 1 point per $10 spent
         self.loyalty_points += points
         print(f"⭐ {self.full_name} earned {points} points! Total: {self.loyalty_points}")
-        
+
+    def toggle_tax_exempt(self):
+        """Requirement 40: Toggles the tax-exempt status for the guest."""
+        self.is_tax_exempt = not self.is_tax_exempt
+        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
+        print(f"Tax Exempt status for {self.full_name}: {status}")
+
+    def get_discount_multiplier(self, percentage):
+        """Requirement 42: Returns a multiplier for the subtotal."""
+        # E.g., a 10% discount returns 0.90
+        discount = Decimal(str(percentage)) / 100
+        return (Decimal("1.00") - discount)
 
 class Staff(Person):
     """
