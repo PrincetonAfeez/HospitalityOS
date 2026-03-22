@@ -133,11 +133,23 @@ class Transaction:
         self.tip = Decimal("0.00")
         self.split_count = 1
 
+    def apply_tip(self, amount: str):
+        """Task: Process tip as percentage or flat amount."""
+        try:
+            if "%" in amount:
+                percent = Decimal(amount.replace("%", "")) / 100
+                self.tip = (self.cart.subtotal * percent).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            else:
+                self.tip = Decimal(amount.replace("$", "")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            return True
+        except:
+            print("❌ Invalid tip format.")
+            return False
+        
     def to_dict(self):
-        """Updated Task 9: Include staff_id in the permanent log"""
         return {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "staff_id": self.staff_id, # Added for Auditor Sync
+            "staff_id": self.staff_id,
             "table_num": self.table_num,
             "items": [item.to_dict() for item in self.cart.items],
             "financials": {
@@ -161,24 +173,22 @@ class Transaction:
         print("\n" + "="*35)
         print(f"{'HOSPITALITY OS RECEIPT':^35}")
         print(f"{'Table: ' + str(self.table_num):^35}")
+        print(f"{'Server: ' + self.staff_id:^35}") # Added server ID to receipt
         print("="*35)
         
-        # We loop through items directly now to show individual modifiers
         for item in self.cart.items:
             print(f"1x {item.name:<20} ${item.price:>8.2f}")
-            
-            # --- Task 5: Show Modifiers ---
             if hasattr(item, 'modifiers'):
                 for mod in item.modifiers:
                     print(f"   + {mod.name:<17} ${mod.price:>8.2f}")
-            
-            # --- Task 6 Preview: Show Notes (if any) ---
             if hasattr(item, 'kitchen_notes') and item.kitchen_notes:
                 print(f"     (Note: {item.kitchen_notes})")
 
         print("-" * 35)
         print(f"Subtotal:            ${self.cart.subtotal:>8.2f}")
-        print(f"Tax (8%):            ${self.cart.sales_tax:>8.2f}")
+        # Dynamic Tax Display
+        tax_display = int(self.cart.tax_rate * 100)
+        print(f"Tax ({tax_display}%):           ${self.cart.sales_tax:>8.2f}")
         print(f"Tip:                 ${self.tip:>8.2f}")
         print("-" * 35)
         print(f"TOTAL:               ${self.final_total:>8.2f}")
