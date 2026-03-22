@@ -114,10 +114,10 @@ class Cart:
     
 # --- Transaction is now its own class (NOT indented) ---
 class Transaction:
-    def __init__(self, cart: Cart, table_num: int, server_id: str = "OFFLINE"):
+    def __init__(self, cart: Cart, table_num: int, staff_id: str = "OFFLINE"):
         self.cart = cart
         self.table_num = table_num
-        self.server_id = server_id  # Task 1: Link to staff
+        self.server_id = staff_id  # Task 1: Link to staff
         self.tip = Decimal("0.00")
         self.split_count = 1
 
