@@ -3,9 +3,35 @@
 import random
 from HospitalityOS.models import Guest
 import digitalpos # Import your 2nd script
-# Import the custom validation module
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
+from models import Person # Inherit from the base Person in models
+from decimal import Decimal
 
+class Guest(Person):
+    """
+    Requirement 7-8, 40, 42: Guest Identity Logic.
+    Moved here to centralize Front Desk responsibilities.
+    """
+    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
+        super().__init__(first_name, last_name)
+        self.guest_id = guest_id
+        self.phone = phone
+        self.allergies = allergies if allergies else []
+        self.loyalty_points = 0 
+        self.is_tax_exempt = False 
+
+    def add_loyalty_points(self, bill_subtotal):
+        points_earned = int(bill_subtotal // 10)
+        self.loyalty_points += points_earned
+        print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
+
+    def toggle_tax_exempt(self):
+        self.is_tax_exempt = not self.is_tax_exempt
+
+    def get_discount_multiplier(self, percentage):
+        discount = Decimal(str(percentage)) / 100
+        return (Decimal("1.00") - discount)
+    
 def main():
     """
     The main engine of the script. 
