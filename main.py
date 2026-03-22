@@ -45,28 +45,27 @@ def main():
     print("--- STAFF LOGIN ---")
     active_server = None
     while not active_server:
-        login_id = input("Enter Server ID (e.g., EMP-01): ").strip().upper()
-        # For now, we'll simulate a check, but Task 5 will link to CSV
-        if login_id.startswith("EMP"):
-            active_server = Staff(login_id, "Jane Doe", "Server") # Placeholder
-            print(f"Welcome, {active_server.name}!")
-        else:
-            print("❌ Invalid ID Format. Try again.")
-    
-        # Inside your main() after login:
+        print("\n" + "="*45)
+        print(f"{'STAFF LOGIN REQUIRED':^45}")
+        print("="*45)
+        login_id = input("Enter Staff ID (e.g., EMP-01): ").strip().upper()
+        
+        # Task 5: Use the actual validation logic
         active_server = validate_staff_login(login_id)
 
-        # When saving state (Task 6):
-        # Task 6: Prepare the state_data dictionary for the Auditor
-        state_data = {
-            "staff_id": active_server.staff_id,
-            "staff_name": active_server.name,
-            "net_sales": float(daily_net_sales),
-            "last_updated": datetime.now().strftime("%I:%M %p")
-        }
-
-        # Write to the Shared Brain
-        save_to_json(state_data, "restaurant_state.json")
+        if active_server:
+            print(f"✅ Welcome, {active_server.name}!")
+            
+            # Task 6: Prepare and Save state_data ONCE after successful login
+            state_data = {
+                "staff_id": active_server.staff_id,
+                "staff_name": active_server.name,
+                "net_sales": float(daily_net_sales),
+                "last_updated": datetime.datetime.now().strftime("%I:%M %p")
+            }
+            save_to_json(state_data, "restaurant_state.json")
+        else:
+            print("❌ Invalid Staff ID. Please try again.")
 
     # 2. Intake
     table_num = get_int("Enter Table Number: ", min_val=1)
@@ -132,7 +131,7 @@ def main():
                 input("\nPress Enter to continue...")
                 continue
             
-            txn = Transaction(cart, table_num)
+            txn = Transaction(cart, table_num, staff_id=active_server.staff_id)
             
             print(f"\nSubtotal: ${cart.subtotal:.2f}")
             tip_input = input("Enter tip (e.g., 20% or 10.00): ")
