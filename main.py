@@ -3,7 +3,7 @@ import re
 import datetime 
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
-from models import Cart, Transaction, Staff, InventoryManager, Modifier 
+from models import Cart, ReceiptPrinter, Transaction, Staff, InventoryManager, Modifier 
 from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id
 from storage import save_to_json
 
@@ -105,7 +105,7 @@ def process_checkout(active_server, table_num, cart, menu, current_sales):
     txn.split_count = int(split_input) if split_input.isdigit() else 1
     
     clear_screen()
-    txn.generate_receipt() # Visual printout
+    ReceiptPrinter.print_bill(txn) # Visual printout
     
     # Persistent Logging for Day 7 Analytics
     save_to_json(txn.to_dict(), "transaction_log.json") # Append to history
