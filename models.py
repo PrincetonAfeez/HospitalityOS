@@ -111,32 +111,33 @@ class Cart:
     @property
     def grand_total(self) -> Decimal:
         return self.subtotal + self.sales_tax
-    
+
+class Staff:
+    def __init__(self, staff_id, name, dept):
+        self.staff_id = staff_id
+        self.name = name
+        self.dept = dept
+        self.total_sales = Decimal("0.00")
+
+    def calculate_sales_per_hour(self, hours_worked):
+        """Task 3: Calculate productivity."""
+        if hours_worked <= 0: return Decimal("0.00")
+        return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        
 # --- Transaction is now its own class (NOT indented) ---
 class Transaction:
     def __init__(self, cart: Cart, table_num: int, staff_id: str = "OFFLINE"):
         self.cart = cart
         self.table_num = table_num
-        self.server_id = staff_id  # Task 1: Link to staff
+        self.staff_id = staff_id  # FIXED: Renamed from server_id to staff_id
         self.tip = Decimal("0.00")
         self.split_count = 1
 
-    def apply_tip(self, amount: str):
-        try:
-            if "%" in amount:
-                percent = Decimal(amount.replace("%", "")) / 100
-                self.tip = (self.cart.subtotal * percent).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            else:
-                self.tip = Decimal(amount.replace("$", "")).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            return True
-        except:
-            print("Invalid tip format.")
-            return False
-
     def to_dict(self):
-        """Converts the full Transaction and its Cart to a dictionary with a timestamp."""
+        """Updated Task 9: Include staff_id in the permanent log"""
         return {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "staff_id": self.staff_id, # Added for Auditor Sync
             "table_num": self.table_num,
             "items": [item.to_dict() for item in self.cart.items],
             "financials": {
