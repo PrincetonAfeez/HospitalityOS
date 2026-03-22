@@ -11,7 +11,19 @@ class MenuItem:
         self.walk_in_inv = int(walk_in)
         self.freezer_inv = int(freezer)
         self.par_level = int(par)
-
+    
+    def to_dict(self):
+        """Converts MenuItem to a dictionary for JSON storage."""
+        return {
+            "category": self.category,
+            "name": self.name,
+            "price": str(self.price),  # JSON doesn't support Decimal, convert to string
+            "line_inv": self.line_inv,
+            "walk_in_inv": self.walk_in_inv,
+            "freezer_inv": self.freezer_inv,
+            "par_level": self.par_level,
+            "total_inventory": self.total_inventory
+        }
     @property
     def total_inventory(self):
         return self.line_inv + self.walk_in_inv + self.freezer_inv
