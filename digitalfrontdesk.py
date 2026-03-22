@@ -1,6 +1,7 @@
 #Project: "Digital Front Desk"
 
 import random
+from HospitalityOS.models import Guest
 import digitalpos # Import your 2nd script
 # Import the custom validation module
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
@@ -56,7 +57,18 @@ def get_resy_details():
     print(f"\n--- Reservation Confirmed ---")
     print(f"Guest: {first_name} {last_name} | Date: {date} at {resy_time}")
     
-    return first_name, last_name, adults, children, allergies
+    # Generate a unique Guest ID for the new OOP object
+    import uuid
+    generated_id = f"GST-{str(uuid.uuid4())[:4].upper()}"
+
+    # RETURN a Guest Object instead of a tuple of strings
+    return Guest(
+        guest_id=generated_id,
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        allergies=allergies
+    )
 
 def handle_arrival(first_name, last_name, adults, children, allergies):
     """
