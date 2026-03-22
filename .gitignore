@@ -1,8 +1,19 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Hospitality OS Data
-restaurant_state.json
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Transactions & Logs (Keep your data local)
 transaction_log.json
-*.csv
+inventory_report.csv
+*.log
