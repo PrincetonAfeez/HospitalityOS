@@ -268,6 +268,19 @@ class Staff(Person):
             return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
         return Decimal("0.00") # BOH/Managers contribute to overhead, not direct sales
     
+    @property
+    def hourly_rate(self):
+        return self._hourly_rate
+
+    @hourly_rate.setter
+    def hourly_rate(self, value):
+        """Requirement 14: CA Min Wage Guardrail (Adjust as per 2026 laws)"""
+        min_wage = Decimal("16.00") 
+        if Decimal(str(value)) < min_wage:
+            print(f"⚠️ Warning: {value} is below CA Min Wage. Adjusting to {min_wage}.")
+            self._hourly_rate = min_wage
+        else:
+            self._hourly_rate = Decimal(str(value))
 
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
