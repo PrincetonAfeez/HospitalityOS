@@ -268,6 +268,58 @@ class Staff(Person):
             return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
         return Decimal("0.00") # BOH/Managers contribute to overhead, not direct sales
     
+    def clock_in(self):
+        """Requirement 16: Records the exact start of the shift."""
+        self.shift_start = datetime.now()
+        print(f"⏰ {self.full_name} clocked in at {self.shift_start.strftime('%I:%M %p')}")
+
+    def clock_out(self):
+        """Requirement 17: Records the end of the shift."""
+        self.shift_end = datetime.now()
+        print(f"🏁 {self.full_name} clocked out at {self.shift_end.strftime('%I:%M %p')}")
+
+    def get_total_hours(self):
+        """Requirement 18: Calculates duration between clock-in and clock-out."""
+        if not self.shift_start or not self.shift_end:
+            return Decimal("0.00")
+        delta = self.shift_end - self.shift_start
+        # Convert total seconds to decimal hours (e.g., 8.5)
+        return Decimal(str(delta.total_seconds() / 3600)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    
+    def calculate_shift_pay(self):
+        """Requirement 19 & 20: CA Overtime (1.5x after 8h) and Meal Penalty logic."""
+        hours = self.get_total_hours()
+        rate = self.hourly_rate
+        total_pay = Decimal("0.00")
+
+        # Overtime Logic (1.5x after 8 hours)
+        if hours > 8:
+            regular_hours = Decimal("8.00")
+            ot_hours = hours - 8
+            total_pay = (regular_hours * rate) + (ot_hours * rate * Decimal("1.5"))
+        else:
+            total_pay = hours * rate
+
+        # Meal Break Penalty (If shift > 5 hours, add 1 hour of pay if break was missed)
+        # Note: In a real app, you'd check a 'break_taken' boolean.
+        if hours > 5:
+            total_pay += rate # Adding 1 hour 'Penalty' pay per CA law
+            
+        return total_pay.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    
+    def to_csv_row(self):
+        """Requirement 21: Formats shift data for payroll CSV exports."""
+        return {
+            "staff_id": self.staff_id,
+            "name": self.full_name,
+            "dept": self.dept,
+            "role": self.role,
+            "hours_worked": str(self.get_total_hours()),
+            "hourly_rate": str(self.hourly_rate),
+            "gross_pay": str(self.calculate_shift_pay()),
+            "timestamp": datetime.now().strftime("%Y-%m-%d")
+        }
+    
     @property
     def hourly_rate(self):
         return self._hourly_rate
