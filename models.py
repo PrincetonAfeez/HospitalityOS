@@ -3,6 +3,17 @@ from decimal import Decimal, ROUND_HALF_UP
 # Import your new settings
 from settings.restaurant_defaults import TAX_RATE
 
+class Modifier:
+    def __init__(self, name: str, price: float = 0.00):
+        self.name = name
+        self.price = Decimal(str(price))
+
+    def __str__(self):
+        return f" +{self.name} (${self.price:.2f})"
+    
+    def to_dict(self):
+        return {"name": self.name, "price": str(self.price)}
+    
 class MenuItem:
     def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
         self.category = category
@@ -12,13 +23,24 @@ class MenuItem:
         self.walk_in_inv = int(walk_in)
         self.freezer_inv = int(freezer)
         self.par_level = int(par)
+        self.modifiers = []  # Task 1: List of Modifier objects
+        self.kitchen_notes = "" # Task 6: Custom notes
     
+    def add_modifier(self, mod: Modifier):
+        # Task 8: Modifier Par check (Max 3)
+        if len(self.modifiers) < 3:
+            self.modifiers.append(mod)
+        else:
+            print("⚠️ Max modifiers (3) reached for this item.")
+
     def to_dict(self):
         """Converts MenuItem to a dictionary for JSON storage."""
         return {
             "category": self.category,
             "name": self.name,
             "price": str(self.price),  # JSON doesn't support Decimal, convert to string
+            "modifiers": [m.to_dict() for m in self.modifiers],
+            "notes": self.kitchen_notes,
             "line_inv": self.line_inv,
             "walk_in_inv": self.walk_in_inv,
             "freezer_inv": self.freezer_inv,
@@ -71,8 +93,13 @@ class Cart:
 
     @property
     def subtotal(self) -> Decimal:
-        return sum((item.price for item in self.items), Decimal("0.00"))
-
+        total = Decimal("0.00")
+        for item in self.items:
+            total += item.price
+            # Add price of all modifiers attached to the item
+            total += sum(m.price for m in item.modifiers)
+        return total
+    
     @property
     def sales_tax(self) -> Decimal:
         return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
