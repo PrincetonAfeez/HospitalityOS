@@ -117,38 +117,38 @@ def load_staff(filename):
 # ==============================================================================
 
 def initialize_audit():
-    """
-    Phase 1: Environment Setup.
-    Attempts to pull sales from the Shared Brain (restaurant_state.json). 
-    If it fails, prompts for manual entry.
-    """
     print("🚀 Initializing Shift Audit: Syncing with Shared Brain...")
     json_file = "restaurant_state.json"
     net_sales = 0.0
+    active_id = None
 
     try:
-        # UPDATED: Pulling directly from the JSON State created by the POS
         if os.path.exists(json_file):
             with open(json_file, "r") as f:
                 state = json.load(f)
+                # Matches the new nested structure from main.py
                 net_sales = state.get("net_sales", 0.0)
+                active_id = state.get("staff_id", None)
+                print(f"✅ POS Sync: Found Active Session for {active_id}")
         else:
-            print(f"⚠️  Notice: {json_file} not found. POS has not run yet.")
+            print(f"⚠️  Notice: {json_file} not found. Running manual audit.")
     except Exception as e:
-        print(f"⚠️  Sync Warning: Could not automate sales data via JSON. {e}")
+        print(f"⚠️  Sync Warning: {e}")
 
-    # Fallback logic if the data bridge is empty or broken
-    if net_sales is None or net_sales <= 0:
-        print("\n⚠️  NOTICE: No automated sales data found.")
-        if get_yes_no("Would you like to enter sales manually? (y/n): "):
-            net_sales = get_float("  Enter total net sales for the shift: $", min_val=0.01)
+    if net_sales <= 0:
+        if get_yes_no("No sales data found. Enter manually? (y/n): "):
+            net_sales = get_float("  Enter total net sales: $", min_val=0.01)
         else:
-            print("❌ Audit aborted: Cannot calculate labor without sales revenue.")
-            sys.exit()
+            sys.exit("❌ Audit aborted.")
 
-    print(f"\n✅ SALES SYNC COMPLETE: ${net_sales:,.2f} loaded.")
-    staff = load_staff("staff.csv")
-    return staff, net_sales
+    staff_roster = load_staff("staff.csv")
+    
+    # NEW: Filter roster so the manager only audits the person who actually worked
+    if active_id:
+        staff_roster = [s for s in staff_roster if s['staff_id'] == active_id]
+        print(f"🎯 Audit Targeted to Active Server: {staff_roster[0]['name']}")
+
+    return staff_roster, net_sales
 
 
 def process_staff_member(person):
