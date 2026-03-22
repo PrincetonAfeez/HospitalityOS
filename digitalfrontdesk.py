@@ -1,132 +1,155 @@
-#Project: "Digital Front Desk"
+"""
+Project: Hospitality OS - Digital Front Desk (v3.0)
+Description: This script manages the Front-of-House (FOH) guest experience. 
+             It handles the intake of new reservations, calculates party sizes,
+             and bridges the data gap to the POS system.
+"""
 
-import random
-from HospitalityOS.models import Guest
-import digitalpos # Import your 2nd script
+import random # Used for automated table assignment if no preference is given
+import uuid   # Used to generate a unique 4-character Guest ID for CRM tracking
+import digitalpos # Integration with the POS engine to transition guests to a table
+from decimal import Decimal # Ensuring financial precision for loyalty calculations
+from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
-from models import Person # Inherit from the base Person in models
-from decimal import Decimal
+
+# ==============================================================================
+# GUEST MODEL (Domain: Front Desk)
+# ==============================================================================
 
 class Guest(Person):
     """
     Requirement 7-8, 40, 42: Guest Identity Logic.
-    Moved here to centralize Front Desk responsibilities.
+    Centralized here to keep the core models.py focused on Staff and Inventory.
     """
     def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
+        # Initialize the 'Person' base class with names
         super().__init__(first_name, last_name)
-        self.guest_id = guest_id
-        self.phone = phone
-        self.allergies = allergies if allergies else []
+        # Unique identifier (e.g., GST-A1B2)
+        self.guest_id = guest_id 
+        # Validated 10-digit phone number
+        self.phone = phone 
+        # List of critical safety items (default to empty list if None)
+        self.allergies = allergies if allergies else [] 
+        # Requirement 8: Running total of points for rewards
         self.loyalty_points = 0 
+        # Requirement 40: Flag for business or tax-exempt entities
         self.is_tax_exempt = False 
 
     def add_loyalty_points(self, bill_subtotal):
-        points_earned = int(bill_subtotal // 10)
-        self.loyalty_points += points_earned
+        """Task 8: Executive Metric - 1 point awarded per $10 of spend."""
+        points_earned = int(bill_subtotal // 10) # Drop remainder decimals
+        self.loyalty_points += points_earned # Update cumulative total
         print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
 
     def toggle_tax_exempt(self):
-        self.is_tax_exempt = not self.is_tax_exempt
+        """Task 40: Manual override for specific guest types."""
+        self.is_tax_exempt = not self.is_tax_exempt # Flip Boolean state
+        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
+        print(f"Tax Exempt status for {self.full_name}: {status}")
 
     def get_discount_multiplier(self, percentage):
-        discount = Decimal(str(percentage)) / 100
-        return (Decimal("1.00") - discount)
-    
+        """Task 42: Math helper to apply percentages (e.g., 20% -> 0.8)."""
+        discount = Decimal(str(percentage)) / 100 # Convert to decimal ratio
+        return (Decimal("1.00") - discount) # Return the remaining multiplier
+
+# ==============================================================================
+# MAIN ENGINE & LOGIC
+# ==============================================================================
+
 def main():
     """
-    The main engine of the script. 
-    Coordinates the reservation intake and the guest arrival process.
+    The central coordinator. Orchestrates the flow from 
+    Reservation (Part A) to Arrival (Part B).
     """
     print("\n--- Part A: Reservation InTake ---\n")
     
-    # Collect all validated reservation details
-    first, last, adults, kids, allergies = get_resy_details()
+    # STEP 1: Capture the Guest Object and the specific party metadata
+    # We now capture the 'guest_obj' to preserve OOP data through the flow
+    guest_obj, adults, kids = get_resy_details()
     
-    # Use those details to process the guest's physical arrival
-    handle_arrival(first, last, adults, kids, allergies)
+    # STEP 2: Use the object to process the physical guest arrival
+    handle_arrival(guest_obj, adults, kids)
 
 def get_resy_details():
     """
-    Collects and validates all guest information for a new booking.
+    UX: Collects and validates all guest information.
+    Creates and returns a formal Guest object + party counts.
     """
     print("--- MyRestaurant Reservation System ---")
     
-    # Basic Guest Information
-    first_name = get_name("First Name: ")
-    last_name = get_name("Last Name: ")
-    email = get_email("Email Address: ")
+    # 1. Collect Basic Identity Information
+    first_name = get_name("First Name: ") # Validates string length
+    last_name = get_name("Last Name: ")   # Validates string length
+    email = get_email("Email Address: ")  # Validates '@' and '.'
     
-    # 10-digit mobile number, must not be empty/zero
+    # 2. Collect Contact Info (Must be exactly 10 digits)
     phone = get_int("Mobile (10 digits): ", exact_len=10)
     
-    # Party Size: Adults must be at least 1, Children can be 0
+    # 3. Collect Party Context (Not stored in the permanent Guest profile)
     adults = get_int("Number of Adults: ", min_val=1)
     children = get_int("Number of Children: ", allow_zero=True)
     
-    # Date & Time: Using our 'Natural Language' and 'Business Hour' logic
+    # 4. Scheduling Data (Validated against business hours)
     date = get_date("Reservation Date (e.g., Oct 12th): ")
-    # Restaurant opens at 11am (11), last booking at 9pm (21)
-    resy_time = get_time("Reservation Time (e.g., 7pm or 19:00): ", start_hour=11, end_hour=21)
+    resy_time = get_time("Reservation Time: ", start_hour=11, end_hour=21)
     
-    # Allergy logic: Only asks for items if the guest says 'yes'
+    # 5. Allergy Logic: Multi-item list builder
     allergies = []
     if get_yes_no("Are there any food allergies for this party? (y/n): "):
         print("Enter allergies one by one (type 'done' when finished):")
         while True:
-            item = input("> ").strip().title()
-            if item.lower() == "done":
+            item = input("> ").strip().title() # Standardize to Title Case
+            if item.lower() == "done": # Break condition
                 break
-            if item:
+            if item: # Prevent empty strings
                 allergies.append(item)
 
-    # Confirmation summary for the guest
-    print(f"\n--- Reservation Confirmed ---")
-    print(f"Guest: {first_name} {last_name} | Date: {date} at {resy_time}")
-    
-    # Generate a unique Guest ID for the new OOP object
-    import uuid
+    # 6. Instantiate the Guest Object
+    # Create a unique 4-character hex ID for the database/CRM
     generated_id = f"GST-{str(uuid.uuid4())[:4].upper()}"
+    current_guest = Guest(generated_id, first_name, last_name, phone, allergies)
 
-    # RETURN a Guest Object instead of a tuple of strings
-    return Guest(
-        guest_id=generated_id,
-        first_name=first_name,
-        last_name=last_name,
-        phone=phone,
-        allergies=allergies
-    )
+    # 7. Confirmation UX
+    print(f"\n--- Reservation Confirmed ---")
+    print(f"Guest: {current_guest.full_name} | ID: {current_guest.guest_id}")
+    print(f"Date: {date} at {resy_time}")
+    
+    # Returning the full object plus temporary party counts
+    return current_guest, adults, children
 
-def handle_arrival(first_name, last_name, adults, children, allergies):
+def handle_arrival(guest_obj, adults, children):
     """
-    Handles the arrival of the guest and table assignment.
+    Handles physical arrival, table assignment, and hand-off to POS.
     """
     print(f"\n--- Part B: Guest Arrival ---")
-    print(f"Welcome back, {first_name} {last_name}!")
+    print(f"Welcome back, {guest_obj.full_name}!")
     
-    # Update party size: uses get_yes_no to simplify the choice logic
+    # 1. Re-Verify Party Size (Common hospitality UX requirement)
     if get_yes_no("Is the party size still the same? (y/n): "):
-        total_guests = adults + children
+        total_guests = adults + children # Use original reservation counts
     else:
+        # Update counts if the party grew or shrunk
         new_adults = get_int("Updated adult count: ", min_val=1)
         new_kids = get_int("Updated children count: ", allow_zero=True)
         total_guests = new_adults + new_kids
     
-    # Kitchen notification for allergies
-    if allergies:
-        print(f"\n*** KITCHEN ALERT: {', '.join(allergies)} ***")
+    # 2. Safety UX: Explicit alert for the server/kitchen
+    if guest_obj.allergies:
+        print(f"\n*** KITCHEN ALERT: {', '.join(guest_obj.allergies)} ***")
 
-    # Table assignment logic
+    # 3. Table Assignment Logic
     if get_yes_no("Do you have a specific table preference? (y/n): "):
+        # Manual table selection (validated 1-99)
         table_num = get_int("Enter Table Number (1-99): ", min_val=1, max_val=99)
     else:
-        # Assign a random table if no preference
+        # Automated random assignment
         table_num = random.randint(1, 99)
         print(f"No problem, we have assigned you Table {table_num}.")
 
     print(f"\nEnjoy your meal! Table {table_num} is ready for {total_guests} guests.")
 
-    # Pass the validated table number directly to the POS
-    digitalpos.run_pos(table_num)
+    # 4. FINAL INTEGRATION: Launch the POS with the specific Table and Guest data
+    digitalpos.run_pos(table_num, guest_obj)
 
 if __name__ == "__main__":
-    main()
+    main() # Execute the script
