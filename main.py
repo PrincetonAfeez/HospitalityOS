@@ -3,6 +3,8 @@ from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state
 from models import Cart, Transaction
 from validator import get_int, get_name, get_yes_no, get_email, get_float
+from storage import save_to_json
+from models import InventoryManager # Needed for Task 10
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -48,32 +50,40 @@ def main():
         print(" [2] Add Item to Order")
         print(" [3] Remove Item")
         print(" [4] Checkout & Print Receipt")
+        print(" [5] Manager Report (Prep List)") # Task 10
         print(" [Q] Quit System")
         print("-" * 45)
         
         choice = input("Selection > ").strip().upper()
         
         if choice == '1':
-            display_menu(menu) # Task 2 call
-            input("\nPress Enter to return to main menu...")
+            display_menu(menu)
+            input("\nPress Enter to return...")
 
-                
         elif choice == '2':
             item_name = get_name("Enter item name exactly: ")
             found_item = menu.find_item(item_name)
             if found_item:
                 cart.add_to_cart(found_item)
+                
+                # --- TASK 6: SAFETY SAVE ---
+                # Save current cart state to JSON so it's not lost on crash
+                cart_data = [item.to_dict() for item in cart.items]
+                save_to_json(cart_data, "restaurant_state.json")
+                print("...State Autosaved")
             else:
                 print(f"❌ '{item_name}' not found on menu.")
             input("\nPress Enter to continue...")
                 
         elif choice == '3':
-            # FEATURE ACTIVATED: Using the remove logic from models.py
             if not cart.items:
                 print("Your cart is empty!")
             else:
                 item_to_remove = input("Which item would you like to remove? ").strip()
-                cart.remove_from_cart(item_to_remove)
+                if cart.remove_from_cart(item_to_remove):
+                    # Update the safety save after removal
+                    cart_data = [item.to_dict() for item in cart.items]
+                    save_to_json(cart_data, "restaurant_state.json")
             input("\nPress Enter to continue...")
                 
         elif choice == '4':
@@ -82,28 +92,44 @@ def main():
                 input("\nPress Enter to continue...")
                 continue
             
-            # Initialize Transaction
             txn = Transaction(cart, table_num)
             
-            # Tip Logic
             print(f"\nSubtotal: ${cart.subtotal:.2f}")
             tip_input = input("Enter tip (e.g., 20% or 10.00): ")
             txn.apply_tip(tip_input)
             
-            # Split Logic
             split_input = input("How many ways to split? (1-10): ")
             txn.split_count = int(split_input) if split_input.isdigit() else 1
             
-            # Final Print
             clear_screen()
             txn.generate_receipt()
             
-            # FEATURE RESTORED: Update the Shared Brain (JSON)
+            # --- TASK 7: PERMANENT LOG ---
+            # Append this specific transaction to the permanent history
+            save_to_json(txn.to_dict(), "transaction_log.json")
+            
             daily_net_sales += cart.subtotal
             save_system_state(menu, daily_net_sales)
             
+            # Clear the safety save since the transaction is finished
+            if os.path.exists("restaurant_state.json"):
+                os.remove("restaurant_state.json")
+                
             input("\nTransaction Complete. Press Enter to exit...")
             break
+
+        elif choice == '5':
+            # --- TASK 10: MANAGER REPORT ---
+            inv_manager = InventoryManager(menu)
+            prep_list = inv_manager.get_prep_list()
+            print("\n" + "="*30)
+            print(f"{'PREP LIST / PAR GAPS':^30}")
+            print("="*30)
+            if not prep_list:
+                print("All items at or above par!")
+            for entry in prep_list:
+                print(f"- {entry['name']:<15} Need: {entry['need']}")
+            input("\nPress Enter to return...")
             
         elif choice == 'Q':
             print("Exiting System.")
