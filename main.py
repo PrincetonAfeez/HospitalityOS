@@ -64,13 +64,19 @@ def main():
             item_name = get_name("Enter item name exactly: ")
             found_item = menu.find_item(item_name)
             if found_item:
+                # --- Task 3: Prompt for Modifiers ---
+                mod_name = input("Add a modifier? (e.g., Extra Spicy) or press Enter to skip: ").strip()
+                if mod_name:
+                    mod_price = get_float(f"Enter price for {mod_name}: ", min_val=0.0)
+                    from models import Modifier # Ensure Modifier is imported
+                    new_mod = Modifier(mod_name, mod_price)
+                    found_item.add_modifier(new_mod)
+                
                 cart.add_to_cart(found_item)
                 
-                # --- TASK 6: SAFETY SAVE ---
-                # Save current cart state to JSON so it's not lost on crash
+                # Update safety save with new modifier data
                 cart_data = [item.to_dict() for item in cart.items]
                 save_to_json(cart_data, "restaurant_state.json")
-                print("...State Autosaved")
             else:
                 print(f"❌ '{item_name}' not found on menu.")
             input("\nPress Enter to continue...")
