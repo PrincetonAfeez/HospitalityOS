@@ -126,6 +126,16 @@ class Cart:
         print(f"❌ '{item_name}' not in cart.") # UX feedback
         return False
 
+    def void_item(self, item_name, reason="Not Specified"):
+        """Task 41: Security requirement - logs voids to a local file."""
+        for i, item in enumerate(self.items):
+            if item.name.lower() == item_name.lower():
+                self.items.pop(i)
+                with open("security.log", "a") as f:
+                    f.write(f"[{datetime.now()}] VOID: {item_name} | Reason: {reason}\n")
+                return True
+        return False
+    
     @property
     def subtotal(self) -> Decimal:
         """Aggregates the total cost of all items including their modifiers."""
