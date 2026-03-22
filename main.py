@@ -1,4 +1,5 @@
 import os
+import re
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state
 from models import Cart, Transaction
@@ -64,16 +65,21 @@ def main():
             item_name = get_name("Enter item name exactly: ")
             found_item = menu.find_item(item_name)
             if found_item:
-                # --- Task 3: Prompt for Modifiers ---
                 mod_name = input("Add a modifier? (e.g., Extra Spicy) or press Enter to skip: ").strip()
+                
                 if mod_name:
-                    mod_price = get_float(f"Enter price for {mod_name}: ", min_val=0.0)
-                    from models import Modifier # Ensure Modifier is imported
-                    new_mod = Modifier(mod_name, mod_price)
-                    found_item.add_modifier(new_mod)
+                    # --- Task 7: RegEx Validation ---
+                    # Allows letters and spaces only, 2-20 characters
+                    if not re.match(r"^[A-Za-z\s]{2,20}$", mod_name):
+                        print("❌ Invalid modifier name. Use letters only (2-20 chars).")
+                    else:
+                        mod_price = get_float(f"Enter price for {mod_name}: ", min_val=0.0)
+                        from models import Modifier
+                        new_mod = Modifier(mod_name, mod_price)
+                        found_item.add_modifier(new_mod)
                 
                 cart.add_to_cart(found_item)
-                
+                                
                 # Update safety save with new modifier data
                 cart_data = [item.to_dict() for item in cart.items]
                 save_to_json(cart_data, "restaurant_state.json")
