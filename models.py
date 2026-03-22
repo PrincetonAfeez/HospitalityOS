@@ -223,19 +223,51 @@ class ReceiptPrinter:
             print(f"Each ({txn.split_count} ways):      ${txn.per_person:>8.2f}")
         print("="*35 + "\n") # Footer
 
-class Staff:
-    """Blueprint for employee data and performance metrics."""
-    def __init__(self, staff_id, name, dept):
-        self.staff_id = staff_id # Primary Key
-        self.name = name # Display Name
-        self.dept = dept # E.g., 'FOH' or 'BOH'
-        self.total_sales = Decimal("0.00") # Cumulative revenue generated
+class Person:
+    """The base blueprint for any human interacting with the system."""
+    def __init__(self, first_name, last_name):
+        self.first_name = first_name # Validated string
+        self.last_name = last_name # Validated string
 
-    def calculate_sales_per_hour(self, hours_worked):
-        """Task 3: Executive Metric - Sales Per Labor Hour (SPLH)."""
-        if hours_worked <= 0: return Decimal("0.00") # Prevent division by zero
-        # Productivity calculation rounded to the nearest cent
-        return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    @property
+    def full_name(self):
+        """Returns the formatted full name for receipts or reports."""
+        return f"{self.first_name} {self.last_name}"
+
+class Guest(Person):
+    """Represents a customer with a unique ID and hospitality preferences."""
+    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
+        super().__init__(first_name, last_name)
+        self.guest_id = guest_id # Unique identifier (e.g., GST-101)
+        self.phone = phone # Validated 10-digit int
+        self.allergies = allergies if allergies else [] # List of strings
+        self.loyalty_points = 0 # Tracks rewards for Block 4
+
+class Staff(Person):
+    """
+    Represents an employee.
+    Department: FOH (Front of House) or BOH (Back of House)
+    Role: Manager, Server, Chef, Dishwasher, etc.
+    """
+    def __init__(self, staff_id, first_name, last_name, dept, role):
+        super().__init__(first_name, last_name)
+        self.staff_id = staff_id # E.g., EMP-01
+        self.dept = dept # Must be 'FOH' or 'BOH'
+        self.role = role # E.g., 'Manager', 'Server', 'Line Cook'
+        self.total_sales = Decimal("0.00") # Only applicable to Sales roles
+
+    def __str__(self):
+        """Displays staff details for the Auditor or Manager reports."""
+        return f"[{self.staff_id}] {self.full_name} - {self.dept} ({self.role})"
+
+    def calculate_productivity(self, hours_worked):
+        """Task 3: Executive Metric - Optimized for Role-specific tracking."""
+        if hours_worked <= 0: return Decimal("0.00")
+        # Only Servers are measured by personal Sales Per Labor Hour (SPLH)
+        if self.role.lower() == "server":
+            return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        return Decimal("0.00") # BOH/Managers contribute to overhead, not direct sales
+    
 
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
