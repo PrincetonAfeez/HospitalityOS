@@ -53,8 +53,4 @@ with open("menu.csv", "w", newline="", encoding="utf-8") as file:
     writer.writeheader()
     writer.writerows(menu_data)
 
-<<<<<<< HEAD
 print("✅ menu.csv generated! The KeyError should now be resolved.")
-=======
-print("✅ menu.csv generated! The KeyError should now be resolved.")
->>>>>>> master
