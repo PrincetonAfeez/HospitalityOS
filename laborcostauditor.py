@@ -1,69 +1,100 @@
 """
-Project: The "Smart" Labor Cost Auditor
+Project: The "Smart" Labor Cost Auditor (Day 6 Integrated Version)
 Description: A specialized tool for California restaurant managers to audit labor 
              costs, sync sales data, and ensure meal-break compliance.
-Features: 
-  - Dynamic Staff loading from CSV via RegEx name formatting.
-  - Automated/Manual Sales Syncing via inventorymanager.
-  - California Meal Break & Overtime (8hr+) logic.
-  - Shift logging to CSV for payroll records.
-  - Initialization logic (New Service Day vs. Current Shift)
-  - Shared Brain (restaurant_state.json) for Inventory & Sales
+             
+INTEGRATION FEATURES: 
+  - Automated Sales Sync: Pulls real-time net sales from 'restaurant_state.json'.
+  - Targeted Auditing: Identifies the active server from the POS login.
+  - Productivity Tracking: Calculates individual Sales-Per-Labor-Hour (SPLH).
+  - CA Compliance: Automates the $1.00 hour penalty for meal-break violations.
 """
 
-import sys  # Handles system exits and error management
+import sys
+import csv
+import re
+import os
+import json
 from datetime import datetime, date, timedelta
-import csv  # For reading staff rosters and writing shift logs
-import re   # For parsing 'Last, First' name formats
-import os   # For handling file paths and directory debugging
-import json # Added: To read from the Shared Brain
+from decimal import Decimal
 
 # Custom Packages & Modules
-from validator import get_int, get_float, get_time, get_yes_no  # Centralized input logic
-# Removed: import inventorymanager as inv_mgr (Now syncing via JSON)
-from settings.restaurant_defaults import * # Debugging: Helpful for identifying pathing issues when running in different environments
-print(f"DEBUG: Python is currently looking in: {os.getcwd()}")
-
-# ==============================================================================
-# HELPER FUNCTIONS (DATA PARSING & MATH)
+from validator import get_int, get_float, get_time, get_yes_no
+from settings.restaurant_defaults import * # ==============================================================================
+# HELPER FUNCTIONS: DATA PARSING & TIME MATH
 # ==============================================================================
 
 def calculate_shift_hours(clock_in, clock_out):
     """
-    Calculates the decimal duration between two time objects.
-    Logic: Handles graveyard shifts by checking if clock_out is before clock_in.
-    Returns: Float (e.g., 8.5)
+    Calculates decimal hours between two time objects.
+    Handles graveyard shifts (e.g., 10 PM to 2 AM) by checking if the end 
+    time is numerically 'earlier' than the start time.
     """
     today = date.today()
-    # Datetime objects are required to perform subtraction (timedeltas)
     start_dt = datetime.combine(today, clock_in)
     end_dt = datetime.combine(today, clock_out)
 
-    # If the end time is numerically lower (e.g., 10pm to 2am), it's the next day
+    # If clock-out is before clock-in, assume it happened the next calendar day
     if end_dt < start_dt:
         end_dt += timedelta(days=1)
 
     duration = end_dt - start_dt
-    # total_seconds / 3600 converts the raw duration into decimal hours
     return duration.total_seconds() / 3600
+
+
+def format_employee_name(raw_name):
+    """
+    Standardizes employee names using RegEx.
+    Expected Input: 'Doe, Jane' -> Output: 'Jane Doe'
+    If the name does not match the pattern, it returns the string untouched.
+    """
+    pattern = r"^([A-Z][a-z]+),\s+([A-Z][a-z]+)$"
+    match = re.search(pattern, raw_name.strip())
+    
+    if match:
+        # Group 2 = First Name, Group 1 = Last Name
+        return f"{match.group(2)} {match.group(1)}"
+    return raw_name
+
+
+def load_staff(filename):
+    """
+    Reads the staff roster and prepares data for the audit.
+    Converts strings to floats and standardizes names via RegEx.
+    """
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    full_path = os.path.join(base_path, filename)
+
+    staff_list = []
+    try:
+        with open(full_path, "r", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # Strip whitespace from keys/values to prevent DictReader errors
+                row = {k.strip(): v.strip() for k, v in row.items()}
+                row['name'] = format_employee_name(row['name'])
+                row['hourly_rate'] = float(row['hourly_rate'])
+                staff_list.append(row)
+        return staff_list
+    except FileNotFoundError:
+        print(f"❌ Error: {filename} not found. Ensure it is in the project root.")
+        sys.exit()
 
 
 def log_shift(person, in_time, out_time):
     """
-    Appends a finalized shift record to shift_log.csv.
-    Logic: Creates the file and header if they do not already exist.
+    Writes the finalized audit record to a CSV for payroll processing.
+    Ensures a header is created if the file is new.
     """
     filename = "shift_log.csv"
     file_exists = os.path.isfile(filename)
     today_date = date.today().strftime("%Y-%m-%d")
 
-    with open(filename, "a", newline="") as f:
+    with open(filename, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        # Write header only once per file lifecycle
         if not file_exists:
             writer.writerow(["Date", "Name", "Clock_In", "Clock_Out", "Hours", "Pay"])
         
-        # Log the critical payroll data
         writer.writerow([
             today_date, 
             person['name'], 
@@ -73,247 +104,224 @@ def log_shift(person, in_time, out_time):
             f"{person['total_pay']:.2f}"
         ])
 
+# ==============================================================================
+# AUDIT PHASE 1: INITIALIZATION & SYNC
+# ==============================================================================
 
-def format_employee_name(raw_name):
+def fetch_pos_sync_data(json_file):
     """
-    Standardizes employee names using RegEx.
-    Input: "Doe, Jane" -> Output: "Jane Doe"
+    Extracts sales and active staff data from the POS 'Shared Brain'.
+    This is the core of the Day 6 automation logic.
     """
-    # Pattern: Capitalized Word, Comma, Space, Capitalized Word
-    pattern = r"^([A-Z][a-z]+),\s+([A-Z][a-z]+)$"
-    match = re.search(pattern, raw_name.strip())
+    if not os.path.exists(json_file):
+        print(f"⚠️  Notice: {json_file} missing. POS data not synchronized.")
+        return 0.0, None
     
-    if match:
-        # Group 2 is First Name, Group 1 is Last Name
-        return f"{match.group(2)} {match.group(1)}"
-    return raw_name
-
-
-def load_staff(filename):
-    """
-    Locates and reads the staff CSV file.
-    Logic: Uses absolute pathing to prevent 'File Not Found' errors in sub-directories.
-    Returns: List of dictionaries containing staff data.
-    """
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    full_path = os.path.join(base_path, filename)
-
-    staff_list = []
     try:
-        with open(full_path, "r") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                # Process name and convert numerical strings to actual floats
-                row['name'] = format_employee_name(row['name'])
-                row['hourly_rate'] = float(row['hourly_rate'])
-                staff_list.append(row)
-        return staff_list
-    except FileNotFoundError:
-        print(f"❌ Error: Could not find {filename}. Ensure it is in the script folder.")
-        sys.exit()
+        with open(json_file, "r") as f:
+            state = json.load(f)
+            sales = float(state.get("net_sales", 0.0))
+            active_id = state.get("staff_id", None)
+            print(f"✅ Sync Successful: Active ID [{active_id}] loaded.")
+            return sales, active_id
+    except Exception as e:
+        print(f"⚠️  Sync Warning: Could not parse JSON. {e}")
+        return 0.0, None
 
-# ==============================================================================
-# AUDIT PHASES (LOGIC CONTROLLERS)
-# ==============================================================================
 
 def initialize_audit():
-    print("🚀 Initializing Shift Audit: Syncing with Shared Brain...")
-    json_file = "restaurant_state.json"
-    net_sales = 0.0
-    active_id = None
-
-    try:
-        if os.path.exists(json_file):
-            with open(json_file, "r") as f:
-                state = json.load(f)
-                # Matches the new nested structure from main.py
-                net_sales = state.get("net_sales", 0.0)
-                active_id = state.get("staff_id", None)
-                print(f"✅ POS Sync: Found Active Session for {active_id}")
-        else:
-            print(f"⚠️  Notice: {json_file} not found. Running manual audit.")
-    except Exception as e:
-        print(f"⚠️  Sync Warning: {e}")
-
-    if net_sales <= 0:
-        if get_yes_no("No sales data found. Enter manually? (y/n): "):
-            net_sales = get_float("  Enter total net sales: $", min_val=0.01)
-        else:
-            sys.exit("❌ Audit aborted.")
-
-    staff_roster = load_staff("staff.csv")
+    """
+    Prepares the audit environment. 
+    Handles the transition from POS data to the Labor Auditor roster.
+    """
+    print("\n" + "="*45)
+    print(f"{'AUDITOR SALES SYNC':^45}")
+    print("="*45)
     
-    # NEW: Filter roster so the manager only audits the person who actually worked
+    # 1. Automated Sync
+    net_sales, active_id = fetch_pos_sync_data("restaurant_state.json")
+
+    # 2. Manual Fallback (If POS hasn't run or sales are $0)
+    if net_sales <= 0:
+        print("⚠️  No automated sales data found.")
+        if get_yes_no("Would you like to enter sales manually? (y/n): "):
+            net_sales = get_float("  Enter total net sales for shift: $", min_val=0.01)
+        else:
+            print("❌ Audit aborted: Sales required for labor calculation.")
+            sys.exit()
+
+    # 3. Roster Loading & Targeted Filtering
+    staff_roster = load_staff("staff.csv")
     if active_id:
+        # Task 5: Only audit the person who was actually logged into the POS
         staff_roster = [s for s in staff_roster if s['staff_id'] == active_id]
-        print(f"🎯 Audit Targeted to Active Server: {staff_roster[0]['name']}")
+        if staff_roster:
+            print(f"🎯 Target Found: Auditing {staff_roster[0]['name']}...")
+        else:
+            print(f"🚩 Alert: POS ID {active_id} not found in staff roster.")
 
     return staff_roster, net_sales
+
+# ==============================================================================
+# AUDIT PHASE 2: INDIVIDUAL PROCESSING
+# ==============================================================================
+
+def collect_staff_times(name):
+    """Handles the user-interface loop for time clock entry."""
+    while True:
+        in_t = get_time(f"  Enter Clock-In (e.g., 11am): ")
+        out_t = get_time(f"  Enter Clock-Out (e.g., 5:30pm): ")
+        hrs = calculate_shift_hours(in_t, out_t)
+        
+        print(f"  > Total Shift Duration: {hrs:.2f} hours")
+        if get_yes_no(f"  Confirm these times for {name}? (y/n): "):
+            return in_t, out_t, hrs
+
+
+def check_ca_compliance(total_hours):
+    """
+    Applies California Meal-Break Law Logic.
+    Shifts > 6 hours MUST have at least a 30-minute (0.50) unpaid break.
+    """
+    is_violation = False
+    break_time = 0.0
+    
+    if get_yes_no(f"  Did they take a meal break? (y/n): "):
+        while True:
+            break_time = float(get_float(f"  How long was the break? (e.g., 0.50): ", min_val=0))
+            if break_time < total_hours:
+                break
+            print(f"    ❌ Error: Break cannot be longer than the shift itself.")
+        
+        if total_hours > 6.00 and break_time < 0.50:
+            is_violation = True
+    elif total_hours > 6.00:
+        is_violation = True 
+        
+    return break_time, is_violation
 
 
 def process_staff_member(person):
     """
-    Phase 2: Individual Data Entry & Compliance Check.
-    Handles the 'Fat-Finger' guardrails for hours and break violations.
+    Executes the full audit for a single employee.
+    Calculates pay, overtime, and meal-period penalties.
     """
-    print(f"\nProcessing: {person['name']} ({person['dept']})")
+    print(f"\n--- AUDITING: {person['name']} ---")
 
-    # 1. HOURS COLLECTION (LOOPED FOR CONFIRMATION)
-    while True:
-        in_time = get_time(f"  Enter Clock-In (e.g., 9am): ")
-        out_time = get_time(f"  Enter Clock-Out (e.g., 5:30pm): ")
-        raw_hours = calculate_shift_hours(in_time, out_time)
+    # 1. Time Collection
+    in_time, out_time, raw_hours = collect_staff_times(person['name'])
 
-        # Soft validation: Warns but does not block high hour entries
-        warning = " 🚩 (CAUTION: HIGH HOURS)" if raw_hours > 14.00 else ""
-        print(f"  > Total Shift Duration: {raw_hours:.2f} hours{warning}")
-        
-        if get_yes_no(f"  Confirm these times for {person['name']}? (y/n): "):
-            break
+    # 2. Compliance Verification
+    break_time, is_violation = check_ca_compliance(raw_hours)
 
-    # 2. CALIFORNIA BREAK COMPLIANCE
-    break_time = 0.0
-    is_violation = False
+    # 3. Pay Calculus
+    pay_hours = raw_hours - break_time 
+    over_time = max(0, pay_hours - OVERTIME_LIMIT) # OVERTIME_LIMIT usually 8.0
+    reg_hours = min(pay_hours, OVERTIME_LIMIT)      
     
-    # Check if a break occurred
-    if get_yes_no(f"  Did they take a meal break? (y/n): "):
-        while True:
-            break_time = get_float(f"  How long was the break? (e.g., 0.50): ", min_val=0)
-            if break_time >= raw_hours or break_time > 1.30:
-                print(f"    ❌ Error: Invalid break duration.")
-            else:
-                break
-        
-        # CA Rule: Shifts > 6 hours require AT LEAST 30 mins (0.50)
-        if raw_hours > 6.00 and break_time < 0.50:
-            is_violation = True
-    else:
-        # CA Rule: Shifts > 6 hours MUST take a break
-        if raw_hours > 6.00:
-            is_violation = True 
-
-    # 3. PAYROLL CALCULATIONS
-    pay_hours = raw_hours - break_time  # Deduct unpaid meal break
-    over_time = max(0, pay_hours - OVERTIME_LIMIT)  # Calculate OT hours (usually > 8)
-    reg_hours = min(pay_hours, OVERTIME_LIMIT)      # Regular hours capped at OT limit
-    
-    # California Penalty: 1 hour of base pay for meal period violations
+    # Penalty Logic: 1 hour of base pay for non-compliance
     penalty_pay = person['hourly_rate'] if is_violation else 0.0
     
-    # Calculate Total Payroll Impact
     total_pay = (reg_hours * person['hourly_rate']) + \
                 (over_time * person['hourly_rate'] * 1.5) + penalty_pay
 
-    # Inject results into the person dictionary for reporting
+    # Update person record
     person.update({
-        "hours_worked": pay_hours,
+        "hours_worked": pay_hours, 
         "over_time": over_time,
-        "is_violation": is_violation,
-        "total_pay": total_pay,
+        "is_violation": is_violation, 
+        "total_pay": total_pay, 
         "penalty_pay": penalty_pay
     })
     
-    # Commit the individual record to the log
+    # Permanent logging
     log_shift(person, in_time, out_time)
     return person
+
+# ==============================================================================
+# AUDIT PHASE 3: REPORTING & KPIS
+# ==============================================================================
+
+def display_dept_report(dept_name, staff, net_sales):
+    """
+    Generates the department-specific view of the audit.
+    Task 3: Displays individual Productivity based on sales sync.
+    """
+    print(f"\n--- {dept_name} STAFF LIST ---")
+    print(f"{'Name':<18} | {'Pay':<8} | {'Hours':<6}")
+    print("-" * 40)
+    
+    wages, hours, penalties, ot_prem = 0.0, 0.0, 0.0, 0.0
+    
+    for p in staff:
+        if p['dept'] == dept_name:
+            # Individual Productivity Metric
+            productivity = net_sales / p['hours_worked'] if p['hours_worked'] > 0 else 0
+            
+            print(f"{p['name']:<18} | ${p['total_pay']:>7.2f} | {p['hours_worked']:>5.2f}")
+            print(f"  📊 Productivity: ${productivity:.2f}/hr")
+            
+            if p['is_violation']:
+                print(f"  🚩 CA PENALTY APPLIED: Meal-break violation.")
+
+            # Aggregate department metrics
+            wages += p['total_pay']
+            hours += p['hours_worked']
+            penalties += p['penalty_pay']
+            ot_prem += (p['over_time'] * p['hourly_rate'] * 0.5)
+
+    return wages, hours, penalties, ot_prem
 
 
 def generate_full_reports(staff, net_sales, formatted_date):
     """
-    Phase 3: Aggregation & Final Dashboard.
-    Calculates department totals and evaluates performance against targets.
+    Final Phase: Aggregates all data into the Manager Dashboard.
+    Compares performance against restaurant targets.
     """
-    total_foh_wages = 0.0
-    total_boh_wages = 0.0
-    total_hours = 0.0
-    total_ot_costs = 0.0
-    total_penalty_costs = 0.0
+    print(f"\n{'='*65}\n{'OFFICIAL LABOR AUDIT: ' + formatted_date:^65}\n{'='*65}")
 
-    print(f"\n{'='*65}\n{'OFFICIAL LABOR AUDIT':^65}\n{'='*65}")
+    # 1. Run Department Reports
+    boh_w, boh_h, boh_p, boh_ot = display_dept_report("BOH", staff, net_sales)
+    foh_w, foh_h, foh_p, foh_ot = display_dept_report("FOH", staff, net_sales)
 
-    # Process by Department for organized viewing
-    for dept in ["BOH", "FOH"]:
-        print(f"\n--- {dept} STAFF LIST ---")
-        print(f"{'Name':<18} | {'Wage':<6} | {'Hours':<6} | {'Total Pay':>10}")
-        print("-" * 55)
+    # 2. Executive Aggregates
+    total_wages = boh_w + foh_w
+    total_hours = boh_h + foh_h
+    labor_pct = (total_wages / net_sales) * 100 if net_sales > 0 else 0
+    splh = net_sales / total_hours if total_hours > 0 else 0 
         
-        for p in staff:
-            if p['dept'] == dept:
-                # Minimum Wage Check (California Compliance)
-                if p['hourly_rate'] < MIN_WAGE:
-                    print(f"🚩 UNDERPAID ALERT: {p['name']} is below {MIN_WAGE}!")
-                
-                # Print row
-                print(f"{p['name']:<18} | ${p['hourly_rate']:<5.2f} | {p['hours_worked']:<6.2f} | ${p['total_pay']:>9.2f}")
-                
-                # Update global metrics
-                total_hours += p['hours_worked']
-                total_penalty_costs += p['penalty_pay']
-                total_ot_costs += (p['over_time'] * p['hourly_rate'] * 0.5) # The extra 0.5 premium
-                
-                if dept == "BOH": total_boh_wages += p['total_pay']
-                else: total_foh_wages += p['total_pay']
-        
-        # Dept-specific Labor % Metrics
-        dept_total = total_boh_wages if dept == "BOH" else total_foh_wages
-        pct = (dept_total / net_sales) * 100 if net_sales > 0 else 0
-        target = BOH_TARGET if dept == "BOH" else FOH_TARGET
-        status = "✅ OK" if pct <= target else "⚠️  OVER BUDGET"
-
-        # Task 3: Calculate Sales Productivity
-        sales_per_hour = net_sales / p['hours_worked'] if p['hours_worked'] > 0 else 0
-        print(f"   📊 Productivity: ${sales_per_hour:.2f}/hr")
-        
-        print(f"Total {dept} Cost: ${dept_total:,.2f} ({pct:.2f}% of Sales) | {status}")
-        
-
-    # --- EXECUTIVE MANAGER DASHBOARD ---
-    total_wages = total_foh_wages + total_boh_wages
-    labor_percentage = (total_wages / net_sales) * 100 if net_sales > 0 else 0
-    splh = net_sales / total_hours if total_hours > 0 else 0  # Sales Per Labor Hour
-        
+    # 3. Manager Dashboard UX
     print(f"\n{'='*65}\n{'EXECUTIVE MANAGER DASHBOARD':^65}\n{'='*65}")
-    total_target = BOH_TARGET + FOH_TARGET
-    l_status = '✅ OK' if labor_percentage <= total_target else '❌ OVER'
-    
-    print(f"{'Overall Labor %':<25} | {labor_percentage:>11.2f}% | {l_status}")
-    print(f"{'Productivity (SPLH)':<25} | ${splh:>10.2f} | {'📢 Alert' if splh < 65 else '✅ OK'}")
-    print(f"{'Overtime Premium Cost':<25} | ${total_ot_costs:>10.2f} | 🕒")
-    print(f"{'Compliance Penalty Cost':<25} | ${total_penalty_costs:>10.2f} | ⚖️")
+    print(f"{'Net Sales Sync':<25} | ${net_sales:>10.2f}")
+    print(f"{'Overall Labor %':<25} | {labor_pct:>11.2f}%")
+    print(f"{'Productivity (SPLH)':<25} | ${splh:>10.2f}")
+    print(f"{'Overtime Premiums':<25} | ${ (boh_ot + foh_ot) :>10.2f}")
+    print(f"{'Compliance Penalties':<25} | ${ (boh_p + foh_p) :>10.2f}")
+    print("-" * 65)
 
-    # Final Action Items (Guidance for the Manager)
-    print("-" * 65 + "\nACTION ITEMS:")
-    if labor_percentage > 20:
-        goal_gap = (total_wages / 0.20) - net_sales
-        print(f"  👉 Labor high. Increase sales by ${goal_gap:,.2f} to hit 20% goal.")
-    
-    violators = [p['name'] for p in staff if p['is_violation']]
-    if violators: 
-        print(f"  👉 Compliance: Review breaks with {', '.join(violators)}.")
+    # 4. Actionable Insights
+    if labor_pct > 20:
+        print(f"👉 LABOR ALERT: System is {labor_pct - 20:.1f}% over the 20% target.")
+    if (boh_p + foh_p) > 0:
+        print(f"👉 COMPLIANCE ALERT: Break violations detected. Review schedules.")
 
 
 def main():
-    """
-    Primary Controller. 
-    Coordinates the initialization, processing loop, and final reporting.
-    """
-    # Generate Date Header
+    """Primary Controller for the Auditor application."""
+    # Generate timestamped date header
     now = datetime.now()
-    day = now.day
-    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    formatted_date = now.strftime(f"%A, %B {day}{suffix}, at %I:%M %p")
+    formatted_date = now.strftime("%B %d, %Y")
     
-    # Phase 1: Initialize
+    # Phase 1: Initialize (JSON Sync & Roster Prep)
     staff_roster, net_sales = initialize_audit()
 
-    # Phase 2: Processing Loop
+    # Phase 2: Processing Loop (Hours, Breaks, Pay)
     updated_staff = []
     for person in staff_roster:
-        # Process individual data entry and store result
         updated_person = process_staff_member(person)
         updated_staff.append(updated_person)
 
-    # Phase 3: Final Analysis
+    # Phase 3: Final Reports (KPIs & Labor Analysis)
     generate_full_reports(updated_staff, net_sales, formatted_date)
 
 
