@@ -260,7 +260,12 @@ def generate_full_reports(staff, net_sales, formatted_date):
         target = BOH_TARGET if dept == "BOH" else FOH_TARGET
         status = "✅ OK" if pct <= target else "⚠️  OVER BUDGET"
 
+        # Task 3: Calculate Sales Productivity
+        sales_per_hour = net_sales / p['hours_worked'] if p['hours_worked'] > 0 else 0
+        print(f"   📊 Productivity: ${sales_per_hour:.2f}/hr")
+        
         print(f"Total {dept} Cost: ${dept_total:,.2f} ({pct:.2f}% of Sales) | {status}")
+        
 
     # --- EXECUTIVE MANAGER DASHBOARD ---
     total_wages = total_foh_wages + total_boh_wages
