@@ -1,12 +1,11 @@
 import os
 import re
-import datetime
+import datetime # Using the full module import
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
-from models import Cart, Transaction
+from models import Cart, Transaction, Staff, InventoryManager # Combined imports
 from validator import get_int, get_name, get_yes_no, get_email, get_float
 from storage import save_to_json
-from models import Staff, InventoryManager # Needed for Task 10
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -37,12 +36,11 @@ def view_cart(cart):
         print(f"\nSubtotal: ${cart.subtotal:>8.2f}")
 
 def main():
-    # 1. Initialize System & Load Shared Brain
+    # 1. Initialize System
     menu = load_menu_from_csv('menu.csv')
     daily_net_sales = initialize_system_state(menu)
 
     # --- Staff Login ---
-    print("--- STAFF LOGIN ---")
     active_server = None
     while not active_server:
         print("\n" + "="*45)
@@ -50,25 +48,25 @@ def main():
         print("="*45)
         login_id = input("Enter Staff ID (e.g., EMP-01): ").strip().upper()
         
-        # Task 5: Use the actual validation logic
         active_server = validate_staff_login(login_id)
 
         if active_server:
             print(f"✅ Welcome, {active_server.name}!")
-            
-            # Task 6: Prepare and Save state_data ONCE after successful login
-            state_data = {
-                "staff_id": active_server.staff_id,
-                "staff_name": active_server.name,
-                "net_sales": float(daily_net_sales),
-                "last_updated": datetime.datetime.now().strftime("%I:%M %p")
-            }
-            save_to_json(state_data, "restaurant_state.json")
         else:
             print("❌ Invalid Staff ID. Please try again.")
 
+    # Task 6: Save state_data ONCE after successful login
+    state_data = {
+        "staff_id": active_server.staff_id,
+        "staff_name": active_server.name,
+        "net_sales": float(daily_net_sales),
+        "last_updated": datetime.datetime.now().strftime("%I:%M %p")
+    }
+    save_to_json(state_data, "restaurant_state.json")
+
     # 2. Intake
     table_num = get_int("Enter Table Number: ", min_val=1)
+    
     cart = Cart()
     clear_screen()
     
