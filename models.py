@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 # Import your new settings
 from settings.restaurant_defaults import TAX_RATE
@@ -100,6 +101,21 @@ class Transaction:
             print("Invalid tip format.")
             return False
 
+    def to_dict(self):
+        """Converts the full Transaction and its Cart to a dictionary with a timestamp."""
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "table_num": self.table_num,
+            "items": [item.to_dict() for item in self.cart.items],
+            "financials": {
+                "subtotal": str(self.cart.subtotal),
+                "tax": str(self.cart.sales_tax),
+                "tip": str(self.tip),
+                "grand_total": str(self.final_total)
+            },
+            "split_count": self.split_count
+        }
+    
     @property
     def final_total(self) -> Decimal:
         return self.cart.grand_total + self.tip
