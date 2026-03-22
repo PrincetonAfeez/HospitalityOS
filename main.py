@@ -80,6 +80,13 @@ def main():
     
     while True:
         display_header(table_num, cart)
+
+        if daily_net_sales > 0:
+            labor_cost_pct = (Decimal("18.00") / daily_net_sales) * 100
+            if labor_cost_pct > 20:
+                print(f"🚩 LABOR WARNING: {labor_cost_pct:.1f}%")
+                print("   Current labor costs exceed 20% of sales target!")
+        
         print(" [1] View Menu")
         print(" [2] Add Item to Order")
         print(" [3] Remove Item")
@@ -95,46 +102,40 @@ def main():
             input("\nPress Enter to return...")
 
         elif choice == '2':
-            item_name = get_name("Enter item name: ")
+            item_name = get_name("Enter item name exactly: ")
             found_item = menu.find_item(item_name)
             if found_item:
-                # ... (modifier logic) ...
+                # Re-inserting the Modifier logic from Task 7
+                mod_name = input("Add a modifier? (Letters only, 2-20 chars) or Enter to skip: ").strip()
+                if mod_name:
+                    if not re.match(r"^[A-Za-z\s]{2,20}$", mod_name):
+                        print("❌ Invalid modifier name. Skipping...")
+                    else:
+                        mod_price = get_float(f"Enter price for {mod_name}: ", min_val=0.0)
+                        from models import Modifier
+                        found_item.add_modifier(Modifier(mod_name, mod_price))
+                
                 cart.add_to_cart(found_item)
-                sync_state(cart) # FIXED: No longer overwrites staff info
+                sync_state(cart) # Keep the Shared Brain updated
             else:
-                print(f"❌ '{item_name}' not found.")
+                print(f"❌ '{item_name}' not found on menu.")
             input("\nPress Enter to continue...")
                 
-        elif choice == '3':
-            if not cart.items:
-                print("Your cart is empty!")
-            else:
-                item_to_remove = input("Item to remove? ").strip()
-                if cart.remove_from_cart(item_to_remove):
-                    # FIX 2: Consistent datetime
-                    now = datetime.datetime.now().strftime("%I:%M:%S %p")
-                    log_entry = f"[{now}] VOID: {item_to_remove} by {active_server.name}\n"
-                    with open("security.log", "a") as f:
-                        f.write(log_entry)
-                    sync_state(cart) # FIXED: Preserves staff and net_sales
-            input("\nPress Enter to continue...")
-                
-        elif choice == '3':
+        elif choice == '3': # COMBINED AND FIXED
             if not cart.items:
                 print("Your cart is empty!")
             else:
                 item_to_remove = input("Which item would you like to remove? ").strip()
                 if cart.remove_from_cart(item_to_remove):
-                    # --- Task 8: Security Logging ---
-                    timestamp = datetime.datetime.now().strftime("%I:%M:%S %p")
-                    log_entry = f"[{timestamp}] VOID: {item_to_remove} removed by {active_server.name} ({active_server.staff_id})\n"
-                    
+                    # Task 8: Security Logging
+                    now = datetime.datetime.now().strftime("%I:%M:%S %p")
+                    log_entry = f"[{now}] VOID: {item_to_remove} removed by {active_server.name} ({active_server.staff_id})\n"
                     with open("security.log", "a") as f:
                         f.write(log_entry)
                     
-                    # Update safety save
-                    cart_data = [item.to_dict() for item in cart.items]
-                    save_to_json(cart_data, "restaurant_state.json")
+                    sync_state(cart) # Sync staff AND cart
+                else:
+                    print(f"❌ '{item_to_remove}' not found in cart.")
             input("\nPress Enter to continue...")
                 
         elif choice == '4':
