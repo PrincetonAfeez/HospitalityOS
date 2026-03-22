@@ -64,3 +64,19 @@ classDiagram
 - **Shared Brain Sync:** Every login and transaction updates `restaurant_state.json` with the active server's ID and real-time net sales.
 - **Security Audit:** All item removals (voids) are timestamped and logged to `security.log` with the responsible staff member's name.
 - **Labor Alerts:** POS provides real-time warnings if sales-to-labor ratios exceed 20%.
+
+# Hospitality OS v3.0
+
+## 🚀 Overview
+A professional-grade Point of Sale (POS) and Labor Auditor designed for California compliance.
+
+## 🏗️ Architecture
+- **Object-Oriented Design:** Implemented a robust inheritance tree: `Person` -> `Staff` & `Guest`.
+- **Domain Separation:** Logic is split between `models.py` (Operations) and `digitalfrontdesk.py` (Guest Intake).
+- **CA Labor Law Engine:** Automated overtime (1.5x after 8h) and Meal Break Penalty calculations.
+- **Financial Precision:** Powered by the `Decimal` library to ensure zero rounding errors in guest billing.
+
+## 🛠️ Key Features
+- Dynamic Inventory Management with "86-list" protection.
+- Guest Loyalty & Tax-Exempt status tracking.
+- Automated Payroll CSV exporting.
