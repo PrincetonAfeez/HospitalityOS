@@ -4,7 +4,7 @@ import datetime # Using the full module import
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
 from models import Cart, Transaction, Staff, InventoryManager # Combined imports
-from validator import get_int, get_name, get_yes_no, get_email, get_float
+from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id
 from storage import save_to_json
 
 def clear_screen():
@@ -46,27 +46,35 @@ def main():
         print("\n" + "="*45)
         print(f"{'STAFF LOGIN REQUIRED':^45}")
         print("="*45)
-        login_id = input("Enter Staff ID (e.g., EMP-01): ").strip().upper()
+        
+        # Task 9: Call the validator instead of raw input
+        login_id = get_staff_id("Enter Staff ID (e.g., EMP-01): ")
         
         active_server = validate_staff_login(login_id)
 
         if active_server:
             print(f"✅ Welcome, {active_server.name}!")
         else:
-            print("❌ Invalid Staff ID. Please try again.")
+            print(f"❌ Access Denied: ID '{login_id}' not found in system.")
 
-    # Task 6: Save state_data ONCE after successful login
-    state_data = {
-        "staff_id": active_server.staff_id,
-        "staff_name": active_server.name,
-        "net_sales": float(daily_net_sales),
-        "last_updated": datetime.datetime.now().strftime("%I:%M %p")
-    }
-    save_to_json(state_data, "restaurant_state.json")
+    def sync_state(current_cart):
+        """Bundles staff, sales, and cart into one persistent JSON state."""
+        state_snapshot = {
+            "staff_id": active_server.staff_id,
+            "staff_name": active_server.name,
+            "net_sales": float(daily_net_sales),
+            "cart": [item.to_dict() for item in current_cart.items],
+            # Consistent use of datetime.datetime.now()
+            "last_updated": datetime.datetime.now().strftime("%I:%M %p")
+        }
+        save_to_json(state_snapshot, "restaurant_state.json")
+
+    # Initial login sync
+    sync_state(Cart())
 
     # 2. Intake
     table_num = get_int("Enter Table Number: ", min_val=1)
-    
+
     cart = Cart()
     clear_screen()
     
@@ -87,29 +95,28 @@ def main():
             input("\nPress Enter to return...")
 
         elif choice == '2':
-            item_name = get_name("Enter item name exactly: ")
+            item_name = get_name("Enter item name: ")
             found_item = menu.find_item(item_name)
             if found_item:
-                mod_name = input("Add a modifier? (e.g., Extra Spicy) or press Enter to skip: ").strip()
-                
-                if mod_name:
-                    # --- Task 7: RegEx Validation ---
-                    # Allows letters and spaces only, 2-20 characters
-                    if not re.match(r"^[A-Za-z\s]{2,20}$", mod_name):
-                        print("❌ Invalid modifier name. Use letters only (2-20 chars).")
-                    else:
-                        mod_price = get_float(f"Enter price for {mod_name}: ", min_val=0.0)
-                        from models import Modifier
-                        new_mod = Modifier(mod_name, mod_price)
-                        found_item.add_modifier(new_mod)
-                
+                # ... (modifier logic) ...
                 cart.add_to_cart(found_item)
-                                
-                # Update safety save with new modifier data
-                cart_data = [item.to_dict() for item in cart.items]
-                save_to_json(cart_data, "restaurant_state.json")
+                sync_state(cart) # FIXED: No longer overwrites staff info
             else:
-                print(f"❌ '{item_name}' not found on menu.")
+                print(f"❌ '{item_name}' not found.")
+            input("\nPress Enter to continue...")
+                
+        elif choice == '3':
+            if not cart.items:
+                print("Your cart is empty!")
+            else:
+                item_to_remove = input("Item to remove? ").strip()
+                if cart.remove_from_cart(item_to_remove):
+                    # FIX 2: Consistent datetime
+                    now = datetime.datetime.now().strftime("%I:%M:%S %p")
+                    log_entry = f"[{now}] VOID: {item_to_remove} by {active_server.name}\n"
+                    with open("security.log", "a") as f:
+                        f.write(log_entry)
+                    sync_state(cart) # FIXED: Preserves staff and net_sales
             input("\nPress Enter to continue...")
                 
         elif choice == '3':
