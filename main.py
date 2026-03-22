@@ -120,7 +120,14 @@ def main():
             else:
                 item_to_remove = input("Which item would you like to remove? ").strip()
                 if cart.remove_from_cart(item_to_remove):
-                    # Update the safety save after removal
+                    # --- Task 8: Security Logging ---
+                    timestamp = datetime.datetime.now().strftime("%I:%M:%S %p")
+                    log_entry = f"[{timestamp}] VOID: {item_to_remove} removed by {active_server.name} ({active_server.staff_id})\n"
+                    
+                    with open("security.log", "a") as f:
+                        f.write(log_entry)
+                    
+                    # Update safety save
                     cart_data = [item.to_dict() for item in cart.items]
                     save_to_json(cart_data, "restaurant_state.json")
             input("\nPress Enter to continue...")
