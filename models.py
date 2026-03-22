@@ -252,11 +252,19 @@ class Guest(Person):
         self.loyalty_points = 0 
         self.is_tax_exempt = False # Requirement 40: Tax Exempt Flag
 
-    def add_loyalty_points(self, amount):
-        """Requirement 8: Simple rewards logic based on spend."""
-        points = int(amount // 10) # 1 point per $10 spent
-        self.loyalty_points += points
-        print(f"⭐ {self.full_name} earned {points} points! Total: {self.loyalty_points}")
+    def add_loyalty_points(self, bill_subtotal):
+        """Requirement 8: 1 point for every $10 spent."""
+        points_earned = int(bill_subtotal // 10)
+        self.loyalty_points += points_earned
+        print(f"⭐ Loyalty Update: {self.full_name} earned {points_earned} points. Total: {self.loyalty_points}")
+
+    def redeem_points(self, amount):
+        """Requirement 8: Simple redemption logic."""
+        if self.loyalty_points >= amount:
+            self.loyalty_points -= amount
+            return True
+        return False
+    
 
     def toggle_tax_exempt(self):
         """Requirement 40: Toggles the tax-exempt status for the guest."""
