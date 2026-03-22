@@ -10,6 +10,11 @@ from decimal import Decimal, ROUND_HALF_UP # For professional financial rounding
 # Import the globally defined Tax Rate (e.g., 0.08 for 8%)
 from settings.restaurant_defaults import TAX_RATE 
 
+# NEW: Import Guest only for type hinting to avoid circular dependency
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from digitalfrontdesk import Guest
+
 # ==============================================================================
 # MENU & MODIFIER MODELS
 # ==============================================================================
@@ -96,8 +101,9 @@ class Menu:
 
 class Cart:
     """A temporary container for items in an active customer order."""
-    def __init__(self):
+    def __init__(self, guest=None):
         self.items = [] # List of items in the current order
+        self.guest = guest # Attached Guest object (from digitalfrontdesk)
         self.tax_rate = Decimal(str(TAX_RATE)) # Decimal tax rate from settings
 
     def add_to_cart(self, item: MenuItem):
@@ -132,7 +138,9 @@ class Cart:
     
     @property
     def sales_tax(self) -> Decimal:
-        """Calculates tax on the subtotal with financial-grade rounding."""
+        """Requirement 40: Calculates tax, checking if Guest is tax-exempt."""
+        if self.guest and self.guest.is_tax_exempt:
+            return Decimal("0.00")
         return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     @property
@@ -234,49 +242,7 @@ class Person:
         """Returns the formatted full name for receipts or reports."""
         return f"{self.first_name} {self.last_name}"
 
-class Guest(Person):
-    """Represents a customer with a unique ID and hospitality preferences."""
-    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
-        super().__init__(first_name, last_name)
-        self.guest_id = guest_id # Unique identifier (e.g., GST-101)
-        self.phone = phone # Validated 10-digit int
-        self.allergies = allergies if allergies else [] # List of strings
-        self.loyalty_points = 0 # Tracks rewards for Block 4
-
-class Guest(Person):
-    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
-        super().__init__(first_name, last_name)
-        self.guest_id = guest_id
-        self.phone = phone
-        self.allergies = allergies if allergies else []
-        self.loyalty_points = 0 
-        self.is_tax_exempt = False # Requirement 40: Tax Exempt Flag
-
-    def add_loyalty_points(self, bill_subtotal):
-        """Requirement 8: 1 point for every $10 spent."""
-        points_earned = int(bill_subtotal // 10)
-        self.loyalty_points += points_earned
-        print(f"⭐ Loyalty Update: {self.full_name} earned {points_earned} points. Total: {self.loyalty_points}")
-
-    def redeem_points(self, amount):
-        """Requirement 8: Simple redemption logic."""
-        if self.loyalty_points >= amount:
-            self.loyalty_points -= amount
-            return True
-        return False
-    
-
-    def toggle_tax_exempt(self):
-        """Requirement 40: Toggles the tax-exempt status for the guest."""
-        self.is_tax_exempt = not self.is_tax_exempt
-        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
-        print(f"Tax Exempt status for {self.full_name}: {status}")
-
-    def get_discount_multiplier(self, percentage):
-        """Requirement 42: Returns a multiplier for the subtotal."""
-        # E.g., a 10% discount returns 0.90
-        discount = Decimal(str(percentage)) / 100
-        return (Decimal("1.00") - discount)
+# NOTE: Guest class has been moved to digitalfrontdesk.py per architecture requirements.
 
 class Staff(Person):
     """
@@ -290,6 +256,8 @@ class Staff(Person):
         self.dept = dept # Must be 'FOH' or 'BOH'
         self.role = role # E.g., 'Manager', 'Server', 'Line Cook'
         self.total_sales = Decimal("0.00") # Only applicable to Sales roles
+        self.shift_start = None # Initialize as None
+        self.shift_end = None # Initialize as None
 
     def __str__(self):
         """Displays staff details for the Auditor or Manager reports."""
@@ -336,7 +304,6 @@ class Staff(Person):
             total_pay = hours * rate
 
         # Meal Break Penalty (If shift > 5 hours, add 1 hour of pay if break was missed)
-        # Note: In a real app, you'd check a 'break_taken' boolean.
         if hours > 5:
             total_pay += rate # Adding 1 hour 'Penalty' pay per CA law
             
