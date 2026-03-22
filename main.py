@@ -1,5 +1,6 @@
 import os
 import re
+import datetime
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
 from models import Cart, Transaction
@@ -56,11 +57,15 @@ def main():
         active_server = validate_staff_login(login_id)
 
         # When saving state (Task 6):
+        # Task 6: Prepare the state_data dictionary for the Auditor
         state_data = {
-            "active_server": active_server.name,
-            "server_id": active_server.staff_id,
-            "net_sales": float(daily_net_sales)
+            "staff_id": active_server.staff_id,
+            "staff_name": active_server.name,
+            "net_sales": float(daily_net_sales),
+            "last_updated": datetime.now().strftime("%I:%M %p")
         }
+
+        # Write to the Shared Brain
         save_to_json(state_data, "restaurant_state.json")
 
     # 2. Intake
