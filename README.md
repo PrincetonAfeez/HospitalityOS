@@ -1,82 +1,57 @@
-100 Days of Code = Day 1:
+HospitalityOS v4.0 — Enterprise Edition
+Lead Architect: Princeton Afeez
 
-File 1: models.py
-The "Blueprint" (Items, Carts, Transactions) and math logic. Classes defined.
+Release Date: March 2026
 
-File 2: database.py
-The "Shared Brain" (CSV loading & JSON state). Storage handled.
+Status: Stable / Production-Ready
 
-File 3: validator.py
-The "Security Guard" (Regex & Type checking). Defensive Input secured.
+🚀 The Leap to v4.0
+While v3.0 focused on basic Object-Oriented structures, v4.0 introduces professional "Mission-Critical" features: Atomic Data Integrity, Advanced Financial Guardrails, and Role-Based Access Control (RBAC).
 
+🛠️ Technical Milestone Log (v4.0 Updates)
+1. Atomic Persistence Engine (database.py)
+To prevent data loss during the high-paced environment of a restaurant, we moved beyond standard file writing.
 
-File 4: main.py
-The "Orchestrator" (The User Interface), user flow  and Loop operational.
+The Swap Pattern: The system now writes state data to a hidden temporary file and performs an atomic os.replace. This ensures that even a sudden power failure cannot corrupt the "Shared Brain" (JSON state).
 
+2. High-Precision Financials (models.py)
+Decimal Sovereignty: Replaced all float logic with Decimal to ensure 100% accuracy for tax, tips, and split-checks.
 
+Dynamic Tip Parsing: Integrated a smart validator that detects % vs $ symbols, providing a seamless checkout experience.
 
-HospitalityOS - Phase 1: The Blueprint
-A modular, Object-Oriented Point of Sale (POS) and Inventory Management System.
+3. California Labor Compliance 2026
+v4.0 is "Audit-Ready." The Staff model now autonomously manages:
 
-🏗️ Architecture
-The system is divided into four main modules to ensure separation of concerns:
+Wage Floor: Hard-coded setter logic prevents wages below the $18.00/hr mandate.
 
-main.py: The entry point and User Interface loop.
+Overtime Automations: Calculations for 1.5x pay after 8 hours are baked into the core payroll export.
 
-models.py: Contains the MenuItem, Menu, Cart, and Transaction classes.
+Penalty Logic: Automatic tracking of "Meal Break Penalties" for shifts exceeding 5 hours.
 
-database.py: Handles CSV menu loading and JSON state persistence (The "Shared Brain").
+4. Hardened Security Perimeter (validator.py)
+Sanitization Decorators: Implemented a Senior-level Python decorator pattern to scrub all user input for injection characters (;, \) before it reaches the database.
 
-validator.py: Manages robust input validation using RegEx and type-checking.
+RBAC Gatekeeping: The POS now validates "Department" metadata to restrict sensitive Manager Panel actions to authorized personnel only.
 
+5. Forensic Audit Logging
+The SecurityLog: Every high-sensitivity action (Voids, Price Adjustments, Discounts) is now captured in security.log with a Staff ID "fingerprint" and a precise timestamp.
 
-classDiagram
-    class MenuItem {
-        +String name
-        +Decimal price
-        +int line_inv
-        +int walk_in_inv
-        +int freezer_inv
-        +int par_level
-    }
-    class Menu {
-        +List items
-        +find_item(name)
-    }
-    class Cart {
-        +List items
-        +subtotal
-        +add_to_cart(MenuItem)
-        +remove_from_cart(name)
-    }
-    class Transaction {
-        +Cart cart
-        +int table_num
-        +Decimal tip
-        +generate_receipt()
-    }
-    Menu "1" *-- "many" MenuItem
-    Cart "1" o-- "many" MenuItem
-    Transaction "1" -- "1" Cart
+📂 Architecture Overview
+main.py: High-performance UI and event coordination.
 
-### 🔑 Staff & Auditor Integration (Day 6)
-- **Mandatory Login:** System requires a valid `staff_id` (RegEx: `EMP-\d+`) verified against `staff.csv`.
-- **Shared Brain Sync:** Every login and transaction updates `restaurant_state.json` with the active server's ID and real-time net sales.
-- **Security Audit:** All item removals (voids) are timestamped and logged to `security.log` with the responsible staff member's name.
-- **Labor Alerts:** POS provides real-time warnings if sales-to-labor ratios exceed 20%.
+models.py: OOP blueprints for Transactions, Labor, and Inventory.
 
-# Hospitality OS v3.0
+database.py: The Fail-Safe persistence layer.
 
-## 🚀 Overview
-A professional-grade Point of Sale (POS) and Labor Auditor designed for California compliance.
+validator.py: Input security and RegEx enforcement.
 
-## 🏗️ Architecture
-- **Object-Oriented Design:** Implemented a robust inheritance tree: `Person` -> `Staff` & `Guest`.
-- **Domain Separation:** Logic is split between `models.py` (Operations) and `digitalfrontdesk.py` (Guest Intake).
-- **CA Labor Law Engine:** Automated overtime (1.5x after 8h) and Meal Break Penalty calculations.
-- **Financial Precision:** Powered by the `Decimal` library to ensure zero rounding errors in guest billing.
+settings/: Centralized configuration (Tax: 9.5%, Min Wage: $18).
 
-## 🛠️ Key Features
-- Dynamic Inventory Management with "86-list" protection.
-- Guest Loyalty & Tax-Exempt status tracking.
-- Automated Payroll CSV exporting.
+📊 Analytics & KPI Tracking
+The system now provides a "Shift Snapshot" including:
+
+Net Sales (Tax-exclusive).
+
+SPLH (Sales Per Labor Hour) to measure server efficiency.
+
+Labor-to-Sales Ratio based on BOH/FOH targets defined in settings.
