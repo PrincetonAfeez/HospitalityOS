@@ -5,6 +5,7 @@ Description: This module defines the architectural blueprints for the system.
              logic for inventory, tax, and California-compliant labor tracking.
 """
 import uuid # For generating unique IDs for transactions and staff
+import json # For data persistence and state management
 from datetime import datetime # For timestamping transactions
 from decimal import Decimal, ROUND_HALF_UP # For professional financial rounding
 # Import the globally defined Tax Rate (e.g., 0.08 for 8%)
@@ -288,7 +289,7 @@ class Transaction:
         ledger = DailyLedger()
         ledger.record_sale(self.cart.subtotal)
         print(f"💰 Ledger Updated: +${self.cart.subtotal:.2f}")
-        
+
 # ==============================================================================
 # UI & REPORTING MODELS
 # ==============================================================================
@@ -506,6 +507,15 @@ class DailyLedger:
         self.total_revenue += amount
         self.transaction_count += 1
 
+class HospitalityEncoder(json.JSONEncoder):
+    """Utility: Serializes Decimal and DateTime objects for JSON storage."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+    
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
