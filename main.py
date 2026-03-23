@@ -67,6 +67,18 @@ class AdminSession:
 
     def log_action(self, action: str):
         print(f"🔒 [ADMIN LOG] {self.staff.name} performed: {action}")
+
+def manager_menu(session: AdminSession):
+    """Commit 37: Dedicated UI loop for restaurant configuration."""
+    while session.is_active:
+        print("\n--- MANAGER CONTROL PANEL ---")
+        print("1. Update Item Price")
+        print("2. Toggle Item Availability")
+        print("3. Exit Admin Mode")
+        
+        choice = input("Select an option: ")
+        if choice == "3": session.is_active = False
+        # Logic for 1 and 2 will follow in next commits
         
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
