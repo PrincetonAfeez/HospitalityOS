@@ -283,6 +283,12 @@ class Transaction:
             }
         }
 
+    def finalize_transaction(self):
+        """Task 22: Automatically update the ledger when a sale is closed."""
+        ledger = DailyLedger()
+        ledger.record_sale(self.cart.subtotal)
+        print(f"💰 Ledger Updated: +${self.cart.subtotal:.2f}")
+        
 # ==============================================================================
 # UI & REPORTING MODELS
 # ==============================================================================
@@ -499,7 +505,7 @@ class DailyLedger:
     def record_sale(self, amount: Decimal):
         self.total_revenue += amount
         self.transaction_count += 1
-        
+
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
