@@ -27,6 +27,10 @@ from settings.restaurant_defaults import OVERTIME_LIMIT, MIN_WAGE
 # HELPER FUNCTIONS: DATA PARSING & TIME MATH
 # ==============================================================================
 
+class ComplianceError(Exception):
+    """Raised for impossible labor data or severe CA law violations."""
+    pass
+
 class Shift:
     """Requirement 6: Encapsulates time math and CA compliance logic."""
     def __init__(self, clock_in: datetime, clock_out: datetime, break_minutes: int = 0):
@@ -75,6 +79,11 @@ class LaborAuditor:
     def calculate_ot(self, hours: Decimal) -> Decimal:
         return max(Decimal("0.00"), hours - Decimal(str(OVERTIME_LIMIT)))
             
+    
+    def validate_shift(self, shift: Shift):
+        if shift.raw_hours > 16: # No legal double-shifts > 16hrs
+            raise ComplianceError("Shift exceeds 16-hour safety limit.")
+        
 def calculate_shift_hours(clock_in, clock_out):
     """
     Calculates decimal hours between two time objects.
