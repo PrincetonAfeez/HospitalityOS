@@ -408,6 +408,34 @@ class Staff(Person):
         else:
             self._hourly_rate = Decimal(str(value))
 
+    def get_total_sales_from_log(self, transactions: list[Transaction]) -> Decimal:
+        """
+        Objective 3: Filters transactions to sum up sales for this specific staff member.
+        """
+        personal_sales = Decimal("0.00")
+        for txn in transactions:
+            if txn.staff_id == self.staff_id:
+                personal_sales += txn.cart.subtotal
+        self.total_sales = personal_sales
+        return self.total_sales
+
+    def generate_shift_report(self, transactions: list[Transaction]) -> dict:
+        """
+        Requirement 3: Executive Metric - Sales per Labor Hour (SPLH).
+        """
+        hours = self.get_total_hours()
+        sales = self.get_total_sales_from_log(transactions)
+        
+        splh = (sales / hours).quantize(Decimal("0.01"), ROUND_HALF_UP) if hours > 0 else Decimal("0.00")
+        
+        return {
+            "staff": self.full_name,
+            "hours_worked": float(hours),
+            "total_sales": float(sales),
+            "sales_per_hour": float(splh),
+            "is_profitable": splh > Decimal("100.00") # Business logic: $100/hr goal
+        }
+
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
