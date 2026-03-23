@@ -211,7 +211,13 @@ def print_shift_report(analytics: AnalyticsEngine):
     print("█"*40)
     print(f"Total Revenue: ${analytics.ledger.total_revenue:.2f}")
     print(f"Total Transactions: {analytics.ledger.transaction_count}")
-    
+
+    from laborcostauditor import LaborAuditor
+    auditor = LaborAuditor()
+    auditor.sync_with_ledger()
+    print(f"Labor Percentage: {auditor.labor_percentage:.1f}%")
+    print(f"Labor Status: {'✅ Within Budget' if auditor.is_within_budget else '🚩 Over Budget'}")
+
 def main():
     """Primary Controller: Orchestrates the Hospitality OS session."""
     # 1. Boot-up Sequence
