@@ -30,7 +30,7 @@ class InsufficientStockError(HospitalityError):
 class Modifier:
     """Represents an add-on item like 'Extra Cheese' or 'Sub Salad'."""
     def __init__(self, name: str, price: float = 0.00):
-        self.name = name # The name of the modification
+        self.name = name.strip().title() # The name of the modification
         # Convert to string first to ensure Decimal handles the float accurately
         self.price = Decimal(str(price)) 
 
