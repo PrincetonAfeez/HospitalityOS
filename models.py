@@ -214,6 +214,12 @@ class Transaction:
         """Calculates the amount due per guest for split-check scenarios."""
         return (self.final_total / Decimal(str(self.split_count))).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
+    @property
+    def subtotal(self) -> Decimal:
+        """Optimized aggregation of items and their nested modifiers."""
+        return sum((item.price + sum(m.price for m in item.modifiers)) 
+                   for item in self.items)
+
     def apply_tip(self, amount: str):
         """Parses user input to apply a percentage (20%) or flat ($5) tip."""
         try:
