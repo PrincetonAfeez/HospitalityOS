@@ -485,6 +485,21 @@ class BillSummary:
     def __repr__(self):
         return f"<Bill: ${self.grand_total}>"
     
+class DailyLedger:
+    """Requirement 15: Single source of truth for daily financial tracking."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DailyLedger, cls).__new__(cls)
+            cls._instance.total_revenue = Decimal("0.00")
+            cls._instance.transaction_count = 0
+        return cls._instance
+
+    def record_sale(self, amount: Decimal):
+        self.total_revenue += amount
+        self.transaction_count += 1
+        
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
