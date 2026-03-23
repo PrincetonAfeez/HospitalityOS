@@ -218,6 +218,9 @@ def print_shift_report(analytics: AnalyticsEngine):
     print(f"Labor Percentage: {auditor.labor_percentage:.1f}%")
     print(f"Labor Status: {'✅ Within Budget' if auditor.is_within_budget else '🚩 Over Budget'}")
 
+    # Final cleanup logic
+    auditor.export_payroll(f"payroll_{datetime.now().strftime('%Y%m%d')}.csv")
+    
 def main():
     """Primary Controller: Orchestrates the Hospitality OS session."""
     # 1. Boot-up Sequence
