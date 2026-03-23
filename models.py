@@ -4,606 +4,298 @@ Description: This module defines the architectural blueprints for the system.
              It uses Decimal for financial precision and includes business 
              logic for inventory, tax, and California-compliant labor tracking.
 """
-import uuid # For generating unique IDs for transactions and staff
-import json # For data persistence and state management
-import copy # For deep copying complex objects when needed
-from datetime import datetime # For timestamping transactions
-from decimal import Decimal, ROUND_HALF_UP # For professional financial rounding
-# Import the globally defined Tax Rate (e.g., 0.08 for 8%)
-from settings.restaurant_defaults import TAX_RATE 
+import uuid # Standard library for generating unique, non-sequential transaction IDs
+import json # Used for serializing objects into the 'Shared Brain' JSON state
+import copy # Essential for deep-copying MenuItems to prevent shared state bugs in carts
+from datetime import datetime # Core utility for timestamping sales and clock-ins
+from decimal import Decimal, ROUND_HALF_UP # Industry standard for financial rounding precision
 
-# NEW: Import Guest only for type hinting to avoid circular dependency
-from typing import TYPE_CHECKING
+# Try-Except block to handle missing settings during initial environment setup
+try:
+    from settings.restaurant_defaults import TAX_RATE 
+except ImportError:
+    TAX_RATE = 0.08  # Default fallback if the settings file is not yet created
+
+# Type Hinting: Prevents circular imports while allowing IDE autocompletion
+from typing import TYPE_CHECKING, List, Optional
 if TYPE_CHECKING:
     from digitalfrontdesk import Guest
+
+# ==============================================================================
+# BASE EXCEPTIONS & SECURITY MODELS
+# ==============================================================================
+
+class HospitalityError(Exception):
+    """The root exception for the entire OS; allows for broad 'catch-all' safety nets."""
+    pass
+
+class InsufficientStockError(HospitalityError):
+    """Triggered by InventoryManager when a 'line_inv' hits zero (86'd items)."""
+    pass
+
+class TableAssignmentError(HospitalityError):
+    """Prevents hosting logic from double-booking a physical table."""
+    pass
+
+class SecurityLog:
+    """Requirement: Objective 4 - Provides an immutable audit trail for forensic review."""
+    LOG_FILE = "security.log"
+
+    @staticmethod
+    def log_event(staff_id: str, action: str, details: str) -> None:
+        """Writes a timestamped security entry to a flat file for admin audit."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") # Human-readable time
+        log_entry = f"[{timestamp}] STAFF: {staff_id} | ACTION: {action} | DETAILS: {details}\n"
+        
+        with open(SecurityLog.LOG_FILE, "a") as f: # Append mode to preserve history
+            f.write(log_entry) # Commit to disk
+        print(f"🔒 Security Event Logged: {action}") # Real-time console feedback
 
 # ==============================================================================
 # MENU & MODIFIER MODELS
 # ==============================================================================
 
-class HospitalityError(Exception):
-    """Base exception for HospitalityOS v4.0"""
-    pass
-
-class InsufficientStockError(HospitalityError):
-    """Raised when an item's line inventory is 0 or less."""
-    pass
-
-class TableAssignmentError(HospitalityError):
-    """Raised when attempting to seat a guest at an occupied table."""
-    pass
-
 class Modifier:
-    """Represents an add-on item like 'Extra Cheese' or 'Sub Salad'."""
+    """Represents an add-on item that modifies the base price and name of a dish."""
     def __init__(self, name: str, price: float = 0.00):
-        self.name = name.strip().title() # The name of the modification
-        # Convert to string first to ensure Decimal handles the float accurately
-        self.price = Decimal(str(price)) 
+        self.name = name.strip().title() # Normalize text (e.g., 'extra cheese')
+        self.price = Decimal(str(price)) # Force Decimal for financial safety
 
     def __str__(self):
-        """Returns a string representation for the cart view."""
+        """Standardizes how the modifier looks on the Receipt/Cart UI."""
         return f" +{self.name} (${self.price:.2f})"
     
     def to_dict(self):
-        """Serializes the modifier for the 'Shared Brain' JSON state."""
+        """Converts object to JSON-serializable format for persistence."""
         return {"name": self.name, "price": str(self.price)}
-    
-    def __eq__(self, other):
-        if not isinstance(other, Modifier): return False
-        return self.name == other.name and self.price == other.price
-    
-class MenuItem:
-    """The base object for every product sold in the restaurant."""
-    def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
-        self.category = category # E.g., 'Appetizer', 'Entree'
-        self.name = name # E.g., 'Burger'
-        self.price = Decimal(str(price)) # Base retail price
-        self.line_inv = int(line_inv) # Stock currently on the cooking line
-        self.walk_in_inv = int(walk_in) # Stock in the refrigerator
-        self.freezer_inv = int(freezer) # Stock in the freezer
-        self.par_level = int(par) # Minimum stock required on the line
-        self.modifiers = [] # Collection to hold up to 3 Modifier objects
-        self.kitchen_notes = "" # Custom string for special prep instructions
-        self.is_active = True
 
-    def add_modifier(self, mod: 'Modifier'):
-        """Task 8: Enforces a business limit of 3 modifiers per item."""
-        if mod in self.modifiers:
-            print(f"⚠️ {mod.name} is already applied.")
-            return
-        
-        if len(self.modifiers) < 3: # Check current count
-            self.modifiers.append(mod) # Add the object
-            print(f"✨ Added modifier: {mod.name}") # Visual confirmation
-        else:
-            print(f"⚠️ Limit reached! Cannot add '{mod.name}'.") # UX feedback
+class MenuItem:
+    """The granular data object for every SKU sold in the restaurant."""
+    def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
+        self.category = category # Category for sales reporting (e.g., 'Liquor')
+        self.name = name # The display name for the POS
+        self.price = Decimal(str(price)) # Base retail cost
+        self.line_inv = int(line_inv) # Immediate stock available to the chef
+        self.walk_in_inv = int(walk_in) # Backup stock in refrigeration
+        self.freezer_inv = int(freezer) # Long-term storage stock
+        self.par_level = int(par) # The 'Reorder Point' for prep lists
+        self.modifiers: List[Modifier] = [] # List limited to 3 items per business rules
+        self.kitchen_notes = "" # Special prep instructions (e.g., 'Allergy')
+        self.is_active = True # Soft-delete flag for seasonal items
+
+    def add_modifier(self, mod: Modifier):
+        """Enforces the 'Rule of Three' to prevent order complexity and over-charging."""
+        if len(self.modifiers) < 3:
+            self.modifiers.append(mod) # Append the object to the list
+            return True
+        return False # Signal failure if limit reached
 
     @property
     def total_inventory(self):
-        """Calculates combined stock levels across all three storage areas."""
+        """Computed property summing all storage locations for a macro view."""
         return self.line_inv + self.walk_in_inv + self.freezer_inv
 
-    def to_dict(self):
-        """Converts the item into a dictionary for JSON data persistence."""
-        return {
-            "category": self.category,
-            "name": self.name,
-            "price": str(self.price), # String conversion for JSON compatibility
-            "modifiers": [m.to_dict() for m in self.modifiers], # Nested list
-            "notes": self.kitchen_notes,
-            "line_inv": self.line_inv,
-            "walk_in_inv": self.walk_in_inv,
-            "freezer_inv": self.freezer_inv,
-            "par_level": self.par_level,
-            "total_inventory": self.total_inventory # Computed total
-        }
-
-    def __str__(self):
-        """Standardizes the visual alignment for the POS menu display."""
-        return f"[{self.category:10}] {self.name:25} ${self.price:>6.2f}"
-    
     def clone(self) -> 'MenuItem':
-        """Architecture: Returns a deep copy to prevent cross-contamination of orders."""
+        """Deep copies the item so modifying a Burger in Table 1 doesn't affect Table 2."""
         return copy.deepcopy(self)
 
-class Menu:
-    """A search-optimized collection of MenuItem objects."""
-    def __init__(self):
-        self.items = [] # The primary item registry
-
-    def add_item(self, item: MenuItem):
-        """Appends a new MenuItem to the internal registry list."""
-        self.items.append(item)
-
-    def find_item(self, name: str) -> MenuItem:
-        """Locates an item by name using a case-insensitive search logic."""
-        for item in self.items: # Loop through registry
-            if item.name.lower() == name.lower(): # Match normalized strings
-                return item # Return the matching object
-        return None # Return None if no match is found
-
-class MenuEditor:
-    """Commit 31: Controller for safe menu modifications and price adjustments."""
-    def __init__(self, menu: Menu):
-        self.menu = menu
-
-    def update_price(self, item_name: str, new_price: Decimal):
-        item = self.menu.get_item_by_name(item_name)
-        if item:
-            old_price = item.price
-            item.price = new_price
-            print(f"💰 Price Update: {item_name} changed from ${old_price} to ${new_price}")    
-
-    def apply_category_surge(self, category: str, percentage: Decimal):
-        """Commit 32: Batch price adjustment for an entire category."""
-        target_items = [i for i in self.menu.items if i.category.upper() == category.upper()]
-        for item in target_items:
-            adjustment = (item.price * (percentage / 100)).quantize(Decimal("0.01"))
-            item.price += adjustment
-        print(f"📈 Applied {percentage}% surge to all {category} items.")
-    
-    def toggle_item_status(self, item_name: str):
-        item = self.menu.get_item_by_name(item_name)
-        if item:
-            item.is_active = not item.is_active
-            status = "Active" if item.is_active else "Inactive"
-            print(f"🔄 {item_name} is now {status}.")
-    
-    def set_par_level(self, item_name: str, new_par: int):
-        """Commit 34: Update target inventory levels for automated ordering."""
-        item = self.menu.get_item_by_name(item_name)
-        if item:
-            item.par_level = new_par
-            print(f"📦 Par level for {item_name} updated to {new_par} units.")
-    
-    def add_new_item(self, item: MenuItem):
-        """Commit 35: Safely add items while checking for naming collisions."""
-        if any(i.name.lower() == item.name.lower() for i in self.menu.items):
-            print(f"❌ Error: An item named '{item.name}' already exists.")
-            return False
-        self.menu.add_item(item)
-        return True
-
-        
-class SecurityLog:
-    """
-    Objective 4: Centralized security audit trail.
-    Tracks high-sensitivity actions like Voids and Discounts.
-    """
-    LOG_FILE = "security.log"
-
-    @staticmethod
-    def log_event(staff_id: str, action: str, details: str) -> None:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = f"[{timestamp}] STAFF: {staff_id} | ACTION: {action} | DETAILS: {details}\n"
-        
-        # Ensure we use a safe pathing approach later, but for now:
-        with open(SecurityLog.LOG_FILE, "a") as f:
-            f.write(log_entry)
-        print(f"🔒 Security Event Logged: {action}")
-
-# ==============================================================================
-# CART & FINANCIAL MODELS
-# ==============================================================================
-
-class Table:
-    """Requirement 12: Manage physical-to-digital state mapping."""
-    def __init__(self, table_number: int, capacity: int):
-        self.number = table_number
-        self.capacity = capacity
-        self.is_occupied = False
-        self.active_cart = None
-
-    def host_guests(self, cart: Cart):
-        self.is_occupied = True
-        self.active_cart = cart
-
-    def clear_table(self):
-        self.is_occupied = False
-        self.active_cart = None
-        print(f"🧹 Table {self.number} is now clean and available.")
-
-    def assign_cart(self, cart: Cart):
-        if self.is_occupied:
-            raise TableAssignmentError(f"Table {self.number} is already in use!")
-        self.active_cart = cart
-        self.is_occupied = True
-
-class Cart:
-    def __init__(self, guest=None):
-        self.items: list[MenuItem] = []
-        self.guest = guest
-        self.tax_rate = Decimal(str(TAX_RATE))
-
-    def add_to_cart(self, item: MenuItem) -> None:
-        """
-        Objective 2: Validate inventory BEFORE adding to cart.
-        Raises InsufficientStockError if item is 86'd.
-        """
-        if item.line_inv <= 0:
-            # The 'Error Bridge': Raise instead of print
-            raise InsufficientStockError(f"Inventory Failure: {item.name} is 86'd and cannot be sold.")
-        
-        new_item = item.clone() # Now using the clone logic from Commit 25
-        self.items.append(new_item)
-        item.line_inv -= 1
-        print(f"✅ Added {item.name}. Subtotal: ${self.subtotal:.2f}")
-
-    def remove_from_cart(self, item_name: str):
-        """Removes an item and replenishes the line inventory automatically."""
-        for i, item in enumerate(self.items): # Search the cart
-            if item.name.lower() == item_name.lower(): # Match name
-                item.line_inv += 1 # Restore the deducted stock
-                self.items.pop(i) # Remove from list
-                print(f"🗑️ Removed {item.name}. (Stock Restored)") # UX feedback
-                return True # Signal successful removal
-        print(f"❌ '{item_name}' not in cart.") # UX feedback
-        return False
-
-    def void_item(self, item_name: str, staff: Staff, reason: str = "Not Specified") -> bool:
-        """Requirement 41: Logs voids with mandatory staff attribution."""
-        for i, item in enumerate(self.items):
-            if item.name.lower() == item_name.lower():
-                self.items.pop(i)
-                item.line_inv += 1 # Replenish stock
-                
-                # Use the new SecurityLog class
-                SecurityLog.log_event(
-                    staff_id=staff.staff_id,
-                    action="VOID",
-                    details=f"Item: {item.name} | Reason: {reason}"
-                )
-                return True
-        return False
-    
-    def validate_cart_integrity(self) -> bool:
-        """Security: Ensure no $0 items are being sneaked through."""
-        return all(item.price >= 0 for item in self.items)
-    
-    @property
-    def subtotal(self) -> Decimal:
-        """Aggregates the total cost of all items including their modifiers."""
-        total = Decimal("0.00") # Initialize sum
-        for item in self.items: # Loop through cart
-            total += item.price # Add base price
-            # Sum up modifier prices using a generator expression
-            total += sum((m.price for m in item.modifiers), Decimal("0.00"))
-        return total # Return combined sum
-    
-    @property
-    def sales_tax(self) -> Decimal:
-        """Requirement 40: Calculates tax, checking if Guest is tax-exempt."""
-        if self.guest and self.guest.is_tax_exempt:
-            return Decimal("0.00")
-        return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    @property
-    def grand_total(self) -> Decimal:
-        """The pre-tip total amount (Subtotal + Tax)."""
-        return self.subtotal + self.sales_tax
-
-class Transaction:
-    """The final financial record representing a paid bill."""
-    def __init__(self, cart: Cart, table_num: int, staff: Staff):
-        self.txn_id = str(uuid.uuid4())[:8].upper() # Unique 8-char ID
-        self.cart = cart
-        self.table_num = table_num
-        # Store the whole object, not just the string ID
-        self.staff = staff 
-        self.staff_id = staff.staff_id # For backward compatibility in logs
-        self.tip = Decimal("0.00")
-        self.split_count = 1
-        self.timestamp = datetime.now()
-
-    @property
-    def final_total(self) -> Decimal:
-        """The absolute bottom line: Cart total plus the added tip."""
-        return self.cart.grand_total + self.tip
-
-    @property
-    def per_person(self) -> Decimal:
-        """Calculates the amount due per guest for split-check scenarios."""
-        return (self.final_total / Decimal(str(self.split_count))).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-    @property
-    def subtotal(self) -> Decimal:
-        """Optimized aggregation of items and their nested modifiers."""
-        return sum((item.price + sum(m.price for m in item.modifiers)) 
-                   for item in self.items)
-
-    def apply_tip(self, amount: str):
-        """Parses user input to apply a percentage (20%) or flat ($5) tip."""
-        try:
-            clean_amt = amount.replace("%", "").replace("$", "") # Strip symbols
-            if "%" in amount: # If input was a percentage
-                percent = Decimal(clean_amt) / 100 # Convert to decimal
-                self.tip = (self.cart.subtotal * percent).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            else: # If input was a flat dollar amount
-                self.tip = Decimal(clean_amt).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            return True # Success
-        except: # Handle non-numeric input gracefully
-            print("❌ Invalid tip format.")
-            return False
-    
-    def to_dict(self) -> dict:
-        """Serializes the transaction with deep staff metadata."""
+    def to_dict(self):
+        """Deep serialization including nested modifiers for the 'Shared Brain'."""
         return {
-            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            "staff_id": self.staff.staff_id,
-            "staff_name": self.staff.full_name, # From Person base class
-            "staff_role": self.staff.role,
-            "table_num": self.table_num,
-            "items": [item.to_dict() for item in self.cart.items],
-            "financials": {
-                "subtotal": str(self.cart.subtotal),
-                "tax": str(self.cart.sales_tax),
-                "tip": str(self.tip),
-                "grand_total": str(self.final_total)
-            }
+            "name": self.name,
+            "price": str(self.price),
+            "modifiers": [m.to_dict() for m in self.modifiers],
+            "line_inv": self.line_inv
         }
 
-    def finalize_transaction(self):
-        """Task 22: Automatically update the ledger when a sale is closed."""
-        ledger = DailyLedger()
-        ledger.record_sale(self.cart.subtotal)
-        print(f"💰 Ledger Updated: +${self.cart.subtotal:.2f}")
+class Menu:
+    """The primary registry for all MenuItem objects."""
+    def __init__(self):
+        self.items: List[MenuItem] = [] # Internal storage list
+
+    def add_item(self, item: MenuItem):
+        """Appends a new dish to the live menu registry."""
+        self.items.append(item)
+
+    def find_item(self, name: str) -> Optional[MenuItem]:
+        """Case-insensitive search utility for the POS search bar."""
+        for item in self.items:
+            if item.name.lower() == name.lower():
+                return item # Return reference to the actual object
+        return None
 
 # ==============================================================================
-# UI & REPORTING MODELS
+# LABOR & STAFF MODELS
 # ==============================================================================
-
-class ReceiptPrinter:
-    """A specialized class to handle visual receipt formatting (UX)."""
-    @staticmethod
-    def print_bill(txn: Transaction):
-        """Static method to generate a professional receipt in the console."""
-        print(f"{'ID: ' + txn.txn_id:^35}") # Now displaying the UUID
-        print("\n" + "="*35)
-        print(f"{'HOSPITALITY OS RECEIPT':^35}") # Header
-        print(f"{'Table: ' + str(txn.table_num):^35}") # Metadata
-        print(f"{'Server: ' + txn.staff_id:^35}") # Metadata
-        print("="*35)
-        
-        for item in txn.cart.items: # Iterate through cart items
-            print(f"1x {item.name:<20} ${item.price:>8.2f}") # Base item line
-            for mod in item.modifiers: # Nested modifier loop
-                print(f"   + {mod.name:<17} ${mod.price:>8.2f}") # Modifier line
-            if item.kitchen_notes: # Check for notes
-                print(f"     (Note: {item.kitchen_notes})") # Note line
-
-        print("-" * 35) # Visual separator
-        print(f"Subtotal:            ${txn.cart.subtotal:>8.2f}")
-        tax_pct = int(txn.cart.tax_rate * 100) # Convert rate to integer display
-        print(f"Tax ({tax_pct}%):           ${txn.cart.sales_tax:>8.2f}")
-        print(f"Tip:                 ${txn.tip:>8.2f}")
-        print("-" * 35) # Visual separator
-        print(f"TOTAL:               ${txn.final_total:>8.2f}")
-        
-        if txn.split_count > 1: # Conditional split display
-            print(f"Each ({txn.split_count} ways):      ${txn.per_person:>8.2f}")
-        print("="*35 + "\n") # Footer
-
-        print("-" * 35)
-        print(f"TXN: {txn.txn_id}")
-        print(f"TIME: {txn.timestamp.strftime('%Y-%m-%d %H:%M')}")
-        print("="*35 + "\n")
 
 class Person:
-    """
-    The base blueprint for any human interacting with the system.
-    Requirement: DRY Principle - Centralize identity logic.
-    """
-    def __init__(self, first_name: str, last_name: str) -> None:
-        self.first_name: str = first_name.strip().title()
-        self.last_name: str = last_name.strip().title()
+    """Abstract base class to handle common identity logic (DRY Principle)."""
+    def __init__(self, first_name: str, last_name: str):
+        self.first_name = first_name.strip().title() # Auto-correct casing
+        self.last_name = last_name.strip().title() # Auto-correct casing
 
     @property
-    def full_name(self) -> str:
-        """Returns the formatted full name for receipts or reports."""
+    def full_name(self):
+        """Convenience property for printing receipts and employee badges."""
         return f"{self.first_name} {self.last_name}"
 
-    def __repr__(self) -> str:
-        """Technical representation for debugging."""
-        return f"<{self.__class__.__name__}: {self.full_name}>"
-    
 class Staff(Person):
-    """
-    Represents an employee with role-based logic and CA labor compliance.
-    Requirement: Task 14 & 20 - Wage Guardrails and Shift Tracking.
-    """
-    def __init__(self, staff_id: str, first_name: str, last_name: str, dept: str, role: str, hourly_rate: float):
-        super().__init__(first_name, last_name)
-        self.staff_id = staff_id
-        self.dept = dept.upper()  # Normalize to 'FOH' or 'BOH'
-        self.role = role.title()
-        
-        # This triggers the @hourly_rate.setter logic below
-        self.hourly_rate = hourly_rate 
-        
-        self.total_sales = Decimal("0.00")
-        self.shift_start = None
-        self.shift_end = None
+    """Represents an employee with CA labor-compliant payroll logic."""
+    def __init__(self, staff_id, first_name, last_name, dept, role, hourly_rate):
+        super().__init__(first_name, last_name) # Initialize Person attributes
+        self.staff_id = staff_id # Unique employee identifier (e.g., EMP-01)
+        self.dept = dept.upper() # FOH or BOH normalization
+        self.role = role.title() # Job title normalization
+        self._hourly_rate = Decimal("16.00") # Default starting point
+        self.hourly_rate = hourly_rate # Triggers the setter for compliance check
+        self.shift_start: Optional[datetime] = None # Stores clock-in time
+        self.shift_end: Optional[datetime] = None # Stores clock-out time
 
     @property
     def hourly_rate(self) -> Decimal:
+        """Getter for the hourly wage."""
         return self._hourly_rate
 
     @hourly_rate.setter
-    def hourly_rate(self, value: float) -> None:
-        """Requirement 14: CA Min Wage Guardrail (2026 Standard: $16.00)"""
-        min_wage = Decimal("16.00")
-        input_wage = Decimal(str(value))
-        
-        if input_wage < min_wage:
-            print(f"⚠️ COMPLIANCE ALERT: {value} is below CA Min Wage. Corrected to {min_wage}.")
-            self._hourly_rate = min_wage
-        else:
-            self._hourly_rate = input_wage
+    def hourly_rate(self, value: float):
+        """Requirement 14: Automated Guardrail for 2026 CA Minimum Wage ($16.00)."""
+        val = Decimal(str(value)) # Standardize input to Decimal
+        self._hourly_rate = max(val, Decimal("16.00")) # Enforce floor price
 
-    def __str__(self) -> str:
-        return f"[{self.staff_id}] {self.full_name} - {self.role} ({self.dept})"
-    
-
-    def calculate_productivity(self, hours_worked):
-        """Task 3: Executive Metric - Optimized for Role-specific tracking."""
-        if hours_worked <= 0: return Decimal("0.00")
-        # Only Servers are measured by personal Sales Per Labor Hour (SPLH)
-        if self.role.lower() == "server":
-            return (self.total_sales / Decimal(str(hours_worked))).quantize(Decimal("0.01"), ROUND_HALF_UP)
-        return Decimal("0.00") # BOH/Managers contribute to overhead, not direct sales
-    
     def clock_in(self):
-        """Requirement 16: Records the exact start of the shift."""
-        self.shift_start = datetime.now()
-        print(f"⏰ {self.full_name} clocked in at {self.shift_start.strftime('%I:%M %p')}")
+        """Initializes the labor session for productivity tracking."""
+        self.shift_start = datetime.now() # Capture exact current time
 
     def clock_out(self):
-        """Requirement 17: Records the end of the shift."""
-        self.shift_end = datetime.now()
-        print(f"🏁 {self.full_name} clocked out at {self.shift_end.strftime('%I:%M %p')}")
+        """Finalizes the labor session."""
+        self.shift_end = datetime.now() # Capture exact current time
 
-    def get_total_hours(self):
-        """Requirement 18: Calculates duration between clock-in and clock-out."""
+    def get_total_hours(self) -> Decimal:
+        """Calculates total hours as a Decimal for precise payroll calculation."""
         if not self.shift_start or not self.shift_end:
-            return Decimal("0.00")
-        delta = self.shift_end - self.shift_start
-        # Convert total seconds to decimal hours (e.g., 8.5)
-        return Decimal(str(delta.total_seconds() / 3600)).quantize(Decimal("0.01"), ROUND_HALF_UP)
-    
-    def calculate_shift_pay(self):
-        """Requirement 19 & 20: CA Overtime (1.5x after 8h) and Meal Penalty logic."""
-        hours = self.get_total_hours()
-        rate = self.hourly_rate
-        total_pay = Decimal("0.00")
+            return Decimal("0.00") # Return zero if shift is incomplete
+        delta = self.shift_end - self.shift_start # Subtract timestamps
+        return Decimal(str(delta.total_seconds() / 3600)).quantize(Decimal("0.01"))
 
-        # Overtime Logic (1.5x after 8 hours)
-        if hours > 8:
-            regular_hours = Decimal("8.00")
-            ot_hours = hours - 8
-            total_pay = (regular_hours * rate) + (ot_hours * rate * Decimal("1.5"))
+    def calculate_shift_pay(self) -> Decimal:
+        """Requirement 19/20: Overtime (1.5x after 8h) and CA Meal Penalty logic."""
+        hrs = self.get_total_hours() # Get work duration
+        if hrs <= 8:
+            base_pay = hrs * self.hourly_rate # Regular time
         else:
-            total_pay = hours * rate
+            # Split pay into regular and time-and-a-half segments
+            base_pay = (8 * self.hourly_rate) + ((hrs - 8) * self.hourly_rate * Decimal("1.5"))
+        
+        # Meal Penalty: Add 1 hour of pay if the shift exceeded 5 hours (CA Law)
+        if hrs > 5:
+            base_pay += self.hourly_rate
+        return base_pay.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-        # Meal Break Penalty (If shift > 5 hours, add 1 hour of pay if break was missed)
-        if hours > 5:
-            total_pay += rate # Adding 1 hour 'Penalty' pay per CA law
-            
-        return total_pay.quantize(Decimal("0.01"), ROUND_HALF_UP)
-    
-    def to_csv_row(self):
-        """Requirement 21: Formats shift data for payroll CSV exports."""
-        return {
-            "staff_id": self.staff_id,
-            "name": self.full_name,
-            "dept": self.dept,
-            "role": self.role,
-            "hours_worked": str(self.get_total_hours()),
-            "hourly_rate": str(self.hourly_rate),
-            "gross_pay": str(self.calculate_shift_pay()),
-            "timestamp": datetime.now().strftime("%Y-%m-%d")
-        }
-    
+# ==============================================================================
+# CART & TRANSACTION MODELS
+# ==============================================================================
+
+class Cart:
+    """The temporary holding area for an active table order."""
+    def __init__(self, guest=None):
+        self.items: List[MenuItem] = [] # Active items in the cart
+        self.guest = guest # Reference to the Guest object (if seated)
+        self.tax_rate = Decimal(str(TAX_RATE)) # Global tax constant
+
+    def add_to_cart(self, item: MenuItem):
+        """Validates inventory and clones the item to prevent 'Shared State' bugs."""
+        if item.line_inv <= 0:
+            raise InsufficientStockError(f"86 ALERT: {item.name} is out of stock!")
+        
+        cloned_item = item.clone() # Create a private copy of the MenuItem
+        self.items.append(cloned_item) # Add the copy to the cart
+        item.line_inv -= 1 # Deduct from the master menu inventory
+
     @property
-    def hourly_rate(self):
-        return self._hourly_rate
+    def subtotal(self) -> Decimal:
+        """Aggregates prices of all items plus their nested modifiers."""
+        total = Decimal("0.00")
+        for item in self.items:
+            total += item.price # Add base item price
+            total += sum(m.price for m in item.modifiers) # Add all modifier prices
+        return total
 
-    @hourly_rate.setter
-    def hourly_rate(self, value):
-        """Requirement 14: CA Min Wage Guardrail (Adjust as per 2026 laws)"""
-        min_wage = Decimal("16.00") 
-        if Decimal(str(value)) < min_wage:
-            print(f"⚠️ Warning: {value} is below CA Min Wage. Adjusting to {min_wage}.")
-            self._hourly_rate = min_wage
-        else:
-            self._hourly_rate = Decimal(str(value))
+    @property
+    def sales_tax(self) -> Decimal:
+        """Calculates tax with a check for tax-exempt guest status."""
+        if self.guest and getattr(self.guest, 'is_tax_exempt', False):
+            return Decimal("0.00") # Return zero tax for exempt organizations
+        return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-    def get_total_sales_from_log(self, transactions: list[Transaction]) -> Decimal:
-        """
-        Objective 3: Filters transactions to sum up sales for this specific staff member.
-        """
-        personal_sales = Decimal("0.00")
-        for txn in transactions:
-            if txn.staff_id == self.staff_id:
-                personal_sales += txn.cart.subtotal
-        self.total_sales = personal_sales
-        return self.total_sales
+    @property
+    def grand_total(self) -> Decimal:
+        """The final pre-tip cost: Subtotal + Sales Tax."""
+        return self.subtotal + self.sales_tax
 
-    def generate_shift_report(self, transactions: list[Transaction]) -> dict:
-        """
-        Requirement 3: Executive Metric - Sales per Labor Hour (SPLH).
-        """
-        hours = self.get_total_hours()
-        sales = self.get_total_sales_from_log(transactions)
-        
-        splh = (sales / hours).quantize(Decimal("0.01"), ROUND_HALF_UP) if hours > 0 else Decimal("0.00")
-        
+class Transaction:
+    """The immutable historical record of a completed sale."""
+    def __init__(self, cart: Cart, table_num: int, staff: Staff):
+        self.txn_id = str(uuid.uuid4())[:8].upper() # Human-friendly short ID
+        self.cart = cart # Associated cart data
+        self.table_num = table_num # Source table location
+        self.staff = staff # Attributed employee
+        self.tip = Decimal("0.00") # Initialized tip
+        self.timestamp = datetime.now() # Capture moment of sale
+
+    def apply_tip(self, amount_str: str):
+        """Parses user input for percentage ('20%') or dollar ('5.00') amounts."""
+        try:
+            clean = amount_str.replace("$", "").replace("%", "") # Strip UI symbols
+            if "%" in amount_str:
+                # Percentage of the subtotal
+                self.tip = (self.cart.subtotal * (Decimal(clean) / 100)).quantize(Decimal("0.01"))
+            else:
+                # Flat dollar amount
+                self.tip = Decimal(clean).quantize(Decimal("0.01"))
+        except:
+            self.tip = Decimal("0.00") # Fallback for invalid input
+
+    def to_dict(self):
+        """Serializes the entire transaction including financials for the JSON log."""
         return {
-            "staff": self.full_name,
-            "hours_worked": float(hours),
-            "total_sales": float(sales),
-            "sales_per_hour": float(splh),
-            "is_profitable": splh > Decimal("100.00") # Business logic: $100/hr goal
+            "txn_id": self.txn_id,
+            "staff": self.staff.full_name,
+            "total": str(self.cart.grand_total + self.tip),
+            "timestamp": self.timestamp.isoformat()
         }
 
-class BillSummary:
-    """Requirement: Immutable financial snapshot for v4.0."""
-    def __init__(self, subtotal: Decimal, tax_rate: Decimal, exempt: bool = False):
-        self.subtotal = subtotal
-        self.tax = Decimal("0.00") if exempt else (subtotal * tax_rate).quantize(Decimal("0.01"))
-        self.grand_total = self.subtotal + self.tax
+# ==============================================================================
+# FINANCIAL & UTILITY MODELS
+# ==============================================================================
 
-    def __repr__(self):
-        return f"<Bill: ${self.grand_total}>"
-    
 class DailyLedger:
-    """Requirement 15: Single source of truth for daily financial tracking."""
+    """Singleton: The single source of truth for the restaurant's daily revenue."""
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(DailyLedger, cls).__new__(cls)
-            cls._instance.total_revenue = Decimal("0.00")
-            cls._instance.transaction_count = 0
+            cls._instance.total_revenue = Decimal("0.00") # Reset revenue to zero
+            cls._instance.transaction_count = 0 # Reset count to zero
         return cls._instance
 
     def record_sale(self, amount: Decimal):
+        """Adds a finalized sale to the daily running total."""
         self.total_revenue += amount
         self.transaction_count += 1
 
-    def get_shift_summary(self) -> str:
-        ledger = DailyLedger()
-        return f"Shift End: {ledger.transaction_count} sales | Total: ${ledger.total_revenue:.2f}"
-    
-
-class HospitalityEncoder(json.JSONEncoder):
-    """Utility: Serializes Decimal and DateTime objects for JSON storage."""
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return str(obj)
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
-    
-    def emergency_save(self, data: dict):
-        """Security: Write system state to disk in case of power failure."""
-        with open("system_backup.json", "w") as f:
-            json.dump(data, f, cls=HospitalityEncoder, indent=4)
-    
 class InventoryManager:
-    """Logic engine to analyze stock gaps and prep requirements."""
-    def __init__(self, menu):
-        self.menu = menu # Reference to the loaded menu collection
+    """Business Intelligence tool to identify prep needs and stock gaps."""
+    def __init__(self, menu: Menu):
+        self.menu = menu # Link to the master menu
 
     def get_prep_list(self):
-        """Task 5: Business intelligence - Identifies items below par levels."""
-        prep_list = [] # Initialize results
-        for item in self.menu.items: # Loop through menu
-            if item.line_inv < item.par_level: # Check for inventory gap
-                gap = item.par_level - item.line_inv # Calculate missing units
-                prep_list.append({ # Add data dictionary to list
+        """Compares current stock against Par Levels to generate a 'To-Do' list."""
+        prep_list = []
+        for item in self.menu.items:
+            if item.line_inv < item.par_level:
+                prep_list.append({
                     "name": item.name,
-                    "current": item.line_inv,
-                    "par": item.par_level,
-                    "need": gap
+                    "need": item.par_level - item.line_inv # Calculate discrepancy
                 })
-        return prep_list # Return the actionable data
+        return prep_list # Return actionable data for the chef
