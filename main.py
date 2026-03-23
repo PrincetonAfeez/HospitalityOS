@@ -1,404 +1,231 @@
+"""
+HospitalityOS v4.0 - Main Entry Point
+Architect: Princeton Afeez
+Description: A production-grade POS system featuring Atomic Persistence, 
+Labor Compliance Auditing, and Role-Based Access Control (RBAC).
+"""
+
+import sys
 import os
 import re
-import datetime 
+from datetime import datetime
 from decimal import Decimal
-from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
-from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id, get_decimal_input,  sanitize_input
-from storage import save_to_json
-from models import (
-    Cart, ReceiptPrinter, Transaction, Staff, Menu, MenuEditor, AnalyticsEngine,
-    InventoryManager, Modifier, InsufficientStockError, SecurityLog, DailyLedger
+
+# Internal Module Imports
+from database import (
+    load_menu_from_csv, 
+    initialize_system_state, 
+    save_system_state, 
+    validate_staff_login,
+    check_database_integrity
 )
+from validator import (
+    get_int, get_name, get_yes_no, get_staff_id, 
+    get_decimal_input, sanitize_input, get_float
+)
+from models import (
+    Cart, ReceiptPrinter, Transaction, Staff, Menu, 
+    MenuEditor, AnalyticsEngine, InventoryManager, 
+    Modifier, InsufficientStockError, DailyLedger, AdminSession
+)
+from storage import save_to_json
 
 # ==============================================================================
-# UI & UTILITY HELPERS
+# UI & VISUAL UTILITIES
 # ==============================================================================
 
 def clear_screen():
-    """Standard utility to refresh the terminal view."""
+    """Clears the terminal to keep the UX focused and professional."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def display_header(table_num, cart):
-    """Renders the persistent status bar at the top of the order screen."""
-    print("\n" + "="*45) # Visual border
-    print(f"{'HOSPITALITY OS - TABLE ' + str(table_num):^45}") # Centered Title
-    print("="*45) # Visual border
-    # Show real-time cart stats to the server
-    print(f"Items in Cart: {len(cart.items):<15} Subtotal: ${cart.subtotal:>8.2f}")
-    print("-" * 45) # Section separator
+    """Renders a persistent status bar with real-time cart telemetry."""
+    print("\n" + "█" * 45)
+    print(f"{' HOSPITALITY OS - TABLE ' + str(table_num) :^45}")
+    print("█" * 45)
+    print(f" Items: {len(cart.items):<15} | Subtotal: ${cart.subtotal:>8.2f}")
+    print("-" * 45)
 
-def display_menu(menu_obj):
-    """Task 2: Formats and displays the full menu from the loaded CSV."""
-    print("\n" + "-"*15 + " CURRENT MENU " + "-"*15)
-    for item in menu_obj.items: # Iterate through menu objects
-        print(item) # Utilize the __str__ method in MenuItem model
-    print("-" * 44)
+# ==============================================================================
+# ADMINISTRATIVE & ANALYTICS UI
+# ==============================================================================
 
-def display_staff_performance(active_server: Staff):
+def manager_menu(session: AdminSession, ledger: DailyLedger):
     """
-    Objective 3: UI component for Sales per Labor Hour report.
-    In a real scenario, this would load from transaction_log.json.
+    Commit 37: The secure 'Back-Office' loop.
+    Allows price adjustments and inventory toggles without file editing.
     """
-    # For this demo/commit, we use the active session's sales
-    # but the logic is prepared for a full list of Transaction objects
-    report = active_server.generate_shift_report(transactions=[]) 
-    
-    print("\n" + "="*35)
-    print(f"{'OFFICIAL SHIFT REPORT':^35}")
-    print("="*35)
-    print(f"Staff:          {report['staff']}")
-    print(f"Hours Worked:   {report['hours_worked']} hrs")
-    print(f"Total Sales:    ${report['total_sales']:,.2f}")
-    print(f"Sales / Hour:   ${report['sales_per_hour']:,.2f}")
-    print("-" * 35)
-    
-    if report['is_profitable']:
-        print("✅ PERFORMANCE: ABOVE TARGET")
-    else:
-        print("🚩 PERFORMANCE: BELOW TARGET")
-    print("="*35)
-
-class AdminSession:
-    """Commit 36: Handles the state of an active administrative session."""
-    def __init__(self, staff: Staff, editor: MenuEditor):
-        self.staff = staff
-        self.editor = editor
-        self.is_active = True
-
-    def log_action(self, action: str):
-        print(f"🔒 [ADMIN LOG] {self.staff.name} performed: {action}")
-
-class AnalyticsEngine:
-    """Commit 42: Logic for calculating sales trends and item popularity."""
-    def __init__(self, ledger: DailyLedger, menu: Menu):
-        self.ledger = ledger
-        self.menu = menu
-
-    def get_top_performing_items(self, limit=3):
-        # Sorting items based on how much inventory was used
-        sorted_items = sorted(self.menu.items, key=lambda x: (x.par_level - x.stock.total), reverse=True)
-        return sorted_items[:limit]
-    
-    def get_reorder_list(self):
-        """Commit 43: Returns items that are below 25% of their par level."""
-        return [item for item in self.menu.items if item.stock.total < (item.par_level * 0.25)]
-    
-
-def manager_menu(session: AdminSession):
-    """Commit 37: Dedicated UI loop for restaurant configuration."""
     while session.is_active:
-        print("\n--- MANAGER CONTROL PANEL ---")
-        print("1. Update Item Price")
-        print("2. Toggle Item Availability")
-        print("3. Exit Admin Mode")
+        print("\n" + "🔐" + "━"*10 + " MANAGER PANEL " + "━"*10)
+        print(" [1] Update Item Price")
+        print(" [2] Toggle Seasonal Availability")
+        print(" [3] Run Shift-End Analytics")
+        print(" [4] Exit Admin Mode")
         
-        ledger = DailyLedger()
-
-        choice = input("Select an option: ")
-        if choice == "3": session.is_active = False
-        # Logic for 1 and 2 will follow in next commits
+        choice = input("\nAdmin Action > ").strip()
 
         if choice == "1":
-            name = input("Enter item name: ")
-            new_price = get_decimal_input("Enter new price: $")
+            name = input("Target Item Name: ")
+            new_price = get_decimal_input("Set New Price: $")
             session.editor.update_price(name, new_price)
-            session.log_action(f"Price Change: {name} to {new_price}")
+            session.log_action(f"PRICE_CHANGE: {name} to {new_price}")
+
         elif choice == "2":
-            name = input("Enter item name to toggle: ")
+            name = input("Item Name to Toggle: ")
             session.editor.toggle_item_status(name)
-            session.log_action(f"Status Toggle: {name}")
-        if choice == "3":
-            from database import save_system_state
-            # Assuming 'current_menu' and 'sales' are accessible
+            session.log_action(f"AVAILABILITY_TOGGLE: {name}")
+
+        elif choice == "3":
+            # Commit 42: Real-time analytics engine
+            analytics = AnalyticsEngine(ledger, session.editor.menu)
+            print("\n📈 TOP SELLERS:", [i.name for i in analytics.get_top_performing_items()])
+            alerts = analytics.get_reorder_list()
+            if alerts:
+                print("🚩 REORDER REQUIRED:", [i.name for i in alerts])
+
+        elif choice == "4":
+            print("Saving administrative changes...")
             save_system_state(session.editor.menu, ledger.total_revenue)
             session.is_active = False
 
 # ==============================================================================
-# CORE WORKFLOW FUNCTIONS
+# TRANSACTION WORKFLOW
 # ==============================================================================
-
-def perform_staff_login():
-    """Requirement 4 & 5: Forces a validated login against staff.csv."""
-    active_server = None # Initialize empty state
-    while not active_server: # Loop until a valid ID is provided
-        print("\n" + "="*45)
-        print(f"{'STAFF LOGIN REQUIRED':^45}")
-        print("="*45)
-        login_id = get_staff_id("Enter Staff ID (e.g., EMP-01): ") # RegEx validated input
-        active_server = validate_staff_login(login_id)
-    if active_server:
-        # Changed .name to .full_name to match Commit 1 Refactor
-        print(f"✅ Welcome, {active_server.full_name}!") 
-    return active_server # Return the Staff object for session use
 
 def handle_item_addition(menu, cart, sync_callback, active_server):
-    """Logic for finding items, adding modifiers, and updating the Shared Brain."""
-    item_name = get_name("Enter item name exactly: ") # Validated string input
-    found_item = menu.find_item(item_name) # Search menu collection
+    """Handles item lookup, modifier attachment, and inventory validation."""
+    item_name = get_name("Enter item name: ")
+    found_item = menu.find_item(item_name)
+    
     if found_item:
-        # Task 7: Modifier Integration
-        mod_prompt = "Add a modifier? (Letters only, 2-20 chars) or Enter to skip: "
-        mod_name = input(mod_prompt).strip() # Manual input for optional step
-        if mod_name:
-            if not re.match(r"^[A-Za-z\s]{2,20}$", mod_name): # Validate Modifier name
-                print("❌ Invalid modifier name. Skipping...")
-            else:
-                mod_p = get_float(f"Enter price for {mod_name}: ", min_val=0.0) # Modifier price
-                found_item.add_modifier(Modifier(mod_name, mod_p)) # Attach to item
+        # Check for modifier logic (Task 7)
+        if get_yes_no(f"Add modifiers to {found_item.name}? (y/n): "):
+            mod_name = input("Modifier (e.g., 'Extra Cheese'): ").strip()
+            mod_price = get_float("Mod Price: ", min_val=0.0)
+            found_item.add_modifier(Modifier(mod_name, mod_price))
         
         try:
-            # COMMIT 4 BRIDGE: Catch the inventory exception
             cart.add_to_cart(found_item)
-            sync_callback(cart)
+            sync_callback(cart) # Update 'Shared Brain'
+            print(f"✅ Added {found_item.name}")
         except InsufficientStockError as e:
-            print(f"\n⚠️ POS ALERT: {e}")
-            input("Press Enter to acknowledge...")
+            print(f"⚠️ STOCK ERROR: {e}")
     else:
-        print(f"❌ '{item_name}' not found on menu.")
-    input("\nPress Enter to continue...")
+        print(f"❌ '{item_name}' not found.")
+    input("\nPress Enter...")
 
-def handle_item_removal(active_server, cart, sync_callback):
+def process_checkout(active_server, table_num, cart, menu, ledger):
+    """Finalizes the sale, logs the transaction, and updates the Ledger."""
     if not cart.items:
-        print("Your cart is empty!")
-    else:
-        item_to_remove = input("Which item would you like to remove? ").strip()
-        # COMMIT 5 BRIDGE: Use the new void logic that logs automatically
-        if cart.void_item(item_to_remove, staff=active_server, reason="UI Removal"):
-            sync_callback(cart)
-        else:
-            print(f"❌ '{item_to_remove}' not in cart.")
-    input("\nPress Enter to continue...")
-
-def process_checkout(active_server, table_num, cart, menu, current_sales):
-    """Finalizes transaction, prints receipt, and updates daily totals."""
-    if not cart.items:
-        print("Cart is empty!")
-        return current_sales # Return current sales unchanged
-    
-    # COMMIT 7 & 8 BRIDGE: Pass the whole 'active_server' object, not just ID
-    txn = Transaction(cart, table_num, staff=active_server)
-    
-    print(f"\nSubtotal: ${cart.subtotal:.2f}")
-    tip_input = input("Enter tip (e.g., 20% or 10.00): ")
-    txn.apply_tip(tip_input)
-    
-    split_input = input("How many ways to split? (1-10): ")
-    txn.split_count = int(split_input) if split_input.isdigit() else 1
-    
-    clear_screen()
-    # ReceiptPrinter now pulls Server Name from txn.staff.full_name
-    ReceiptPrinter.print_bill(txn)
-    
-    # Save the deep-serialized dictionary to the log
-    save_to_json(txn.to_dict(), "transaction_log.json")
-    
-    new_total = current_sales + cart.subtotal
-    save_system_state(menu, new_total)
-    
-    if os.path.exists("restaurant_state.json"):
-        os.remove("restaurant_state.json")
-        
-    input("\nTransaction Complete. Press Enter for New Table...")
-    return new_total # Return the updated sales for real-time labor tracking
-
-# ==============================================================================
-# MAIN APPLICATION ENGINE
-# ==============================================================================
-
-def print_shift_report(analytics: AnalyticsEngine):
-    print("\n" + "█"*40)
-    print(f"{'FINAL SHIFT REPORT':^40}")
-    print("█"*40)
-    print(f"Total Revenue: ${analytics.ledger.total_revenue:.2f}")
-    print(f"Total Transactions: {analytics.ledger.transaction_count}")
-
-    from laborcostauditor import LaborAuditor
-    auditor = LaborAuditor()
-    auditor.sync_with_ledger()
-    print(f"Labor Percentage: {auditor.labor_percentage:.1f}%")
-    print(f"Labor Status: {'✅ Within Budget' if auditor.is_within_budget else '🚩 Over Budget'}")
-
-    # Final cleanup logic
-    auditor.export_payroll(f"payroll_{datetime.now().strftime('%Y%m%d')}.csv")
-
-def main():
-    from database import load_menu_from_csv
-    current_menu = load_menu_from_csv("menu.csv")
-    if not current_menu:
-        print("❌ Critical: Menu could not be loaded. Check menu.csv")
         return
 
-    """Primary Controller: Orchestrates the Hospitality OS session."""
-    # 1. Boot-up Sequence
-    menu = load_menu_from_csv('menu.csv') # Load items from file
-    daily_net_sales = initialize_system_state(menu) # Set initial sales state
+    txn = Transaction(cart, table_num, staff=active_server)
+    
+    # Financial Finalization
+    tip_val = input(f"Subtotal ${cart.subtotal:.2f} | Enter Tip ($ or %): ")
+    txn.apply_tip(tip_val)
+    
+    clear_screen()
+    ReceiptPrinter.print_bill(txn)
+    
+    # Commit 46: Log the transaction for historical auditing
+    save_to_json(txn.to_dict(), "transaction_log.json")
+    
+    # Update state
+    ledger.total_revenue += cart.subtotal
+    save_system_state(menu, ledger.total_revenue)
+    input("\nPayment Processed. Press Enter for next table...")
 
-    # 2. Authentication Phase
-    active_server = perform_staff_login() # Enforce login before any operations
-
-    def sync_state(current_cart):
-        """Internal helper to package current state for the Auditor Sync."""
-        state_snapshot = {
-            "staff_id": active_server.staff_id, # Link active server ID
-            "staff_name": active_server.name, # Link active server name
-            "net_sales": float(daily_net_sales), # Current daily revenue
-            "cart": [item.to_dict() for item in current_cart.items], # Serialized items
-            "last_updated": datetime.datetime.now().strftime("%I:%M %p") # Time sync
-        }
-        save_to_json(state_snapshot, "restaurant_state.json") # Write to disk
-
-    # 3. Operations Loop (Multi-Table Support)
-    while True:
-        print("\n" + "-"*45)
-        table_num = get_int("Enter Table Number (or 0 to Quit): ", min_val=0)
-        
-        if table_num == 0: # Check for exit condition
-            print("Exiting System.")
-            break
-
-        cart = Cart() # Initialize a fresh cart for the new table
-        sync_state(cart) # Push empty state to Shared Brain
-        clear_screen()
-        
-        # 4. Active Order Loop
-        while True:
-            display_header(table_num, cart) # Render UI
-            
-            # Requirement 7: Real-Time Labor Alert
-            if daily_net_sales > 0:
-                # Calculate Labor % based on a fixed $18/hr labor cost example
-                labor_pct = (Decimal("18.00") / daily_net_sales) * 100
-                if labor_pct > 20: # Trigger alert if above budget
-                    print(f"🚩 LABOR WARNING: {labor_pct:.1f}%")
-                    print("   Current labor costs exceed 20% of sales target!")
-            
-            # Action Menu
-            print(" [1] View Menu\n [2] Add Item\n [3] Remove Item\n [4] Checkout\n [5] Prep List\n [6] Staff Report\n [Q] Cancel Table")
-            choice = input("Selection > ").strip().upper()
-            
-            if choice == '1':
-                display_menu(menu)
-                input("\nPress Enter to return...")
-
-            elif choice == '2':
-                handle_item_addition(menu, cart, sync_state) # Modifiers & Add
-
-            elif choice == '3':
-                handle_item_removal(active_server, cart, sync_state) # Voids & Log
-
-            elif choice == '4':
-                # Process checkout and update the cumulative daily sales
-                daily_net_sales = process_checkout(active_server, table_num, cart, menu, daily_net_sales)
-                break # Return to table selection
-
-            elif choice == '5':
-                # Task 10: Inventory Prep Report
-                inv_manager = InventoryManager(menu) # Initialize manager with menu data
-                prep_list = inv_manager.get_prep_list() # Fetch items below par
-                print("\n" + "="*30 + f"\n{'PREP LIST':^30}\n" + "="*30)
-                for entry in prep_list:
-                    print(f"- {entry['name']:<15} Need: {entry['need']}")
-                input("\nPress Enter to return...")
-            
-            elif choice == '6':
-                display_staff_performance(active_server)
-                input("\nPress Enter to return...")
-                
-            elif choice == 'Q':
-                if get_yes_no("Cancel current table order? (y/n): "):
-                    if os.path.exists("restaurant_state.json"):
-                        os.remove("restaurant_state.json") # Clean up state
-                    break # Cancel and return to table entry
-            
-            clear_screen() # Refresh UI for next action
+# ==============================================================================
+# MAIN SYSTEM ENGINE
+# ==============================================================================
 
 def main_loop():
     """
-    Commit 47: The primary recursive loop for the POS terminal.
-    Coordinates between Ordering, Auditing, and Administration.
+    The Orchestrator. Connects Database, Models, and Validators 
+    into a single, high-stability event loop.
     """
-    from database import (
-        load_menu_from_csv, 
-        initialize_system_state, 
-        validate_staff_login,
-        save_system_state
-    )
-    from models import DailyLedger, MenuEditor, AdminSession
-    from laborcostauditor import LaborAuditor
-
-    # 1. System Setup
-    menu = load_menu_from_csv("menu.csv")
-    if not menu:
-        print("❌ Critical Error: Menu could not be loaded. Exiting.")
+    if not check_database_integrity():
         return
 
-    # 2. Restore State (Sales & Inventory)
+    # Initialize Persistence
+    menu = load_menu_from_csv("menu.csv")
     initial_sales = initialize_system_state(menu)
     ledger = DailyLedger(initial_sales)
     
-    print(f"\n✅ System Ready. Current Sales: ${ledger.total_revenue:.2f}")
+    # Login Guard
+    active_server = None
+    while not active_server:
+        login_id = get_staff_id("Enter Staff ID to unlock POS: ")
+        active_server = validate_staff_login(login_id)
 
-    # 3. Primary Interaction Loop
+    def sync_state(current_cart):
+        """Helper to keep the 'Shared Brain' JSON in sync with the current session."""
+        state = {
+            "staff_name": active_server.full_name,
+            "net_sales": float(ledger.total_revenue),
+            "cart_count": len(current_cart.items),
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        save_to_json(state, "restaurant_state.json")
+
     while True:
-        print("\n" + "="*30)
-        print(f"{'HOSPITALITY OS v4.0':^30}")
-        print("="*30)
-        print("1. 🛒 New Transaction (Order)")
-        print("2. 📋 Labor Audit (Shift Clock)")
-        print("3. 🔐 Manager Control Panel")
-        print("4. 🚪 Exit & Save State")
-        print("-" * 30)
+        clear_screen()
+        print(f"Logged in: {active_server.full_name} | Shift Sales: ${ledger.total_revenue:.2f}")
+        print("\n" + "═"*30)
+        print("  HOSPITALITY OS MAIN MENU")
+        print("═"*30)
+        print(" [1] Open Table / New Order")
+        print(" [2] Manager Control Panel")
+        print(" [3] System Shutdown")
+        
+        main_choice = input("\nSelect > ").strip()
 
-        choice = input("Select Option: ").strip()
-
-        if choice == "1":
-            # This would call your existing Order/Cart logic
-            # Ensure your Cart updates the 'ledger' and 'menu'
-            print("\n--- Starting New Order ---")
-            # Example: start_order(menu, ledger)
-            pass
-
-        elif choice == "2":
-            # Trigger the Labor Auditor
-            print("\n--- Labor Compliance Module ---")
-            auditor = LaborAuditor(ledger.total_revenue)
-            auditor.sync_with_ledger()
-            # main() logic from laborcostauditor.py can be called here
-            pass
-
-        elif choice == "3":
-            # Admin Mode: Requires Login & Permission Check
-            staff_id = input("Enter Manager ID: ")
-            staff = validate_staff_login(staff_id)
+        if main_choice == "1":
+            table_num = get_int("Table Number: ", min_val=1)
+            cart = Cart()
             
-            if staff and staff.dept.upper() == "MANAGER":
-                editor = MenuEditor(menu)
-                session = AdminSession(staff, editor)
-                # manager_menu logic from Commit 37
-                from main import manager_menu
-                manager_menu(session)
-            else:
-                print("❌ Access Denied: Unauthorized ID.")
+            while True:
+                clear_screen()
+                display_header(table_num, cart)
+                
+                # Labor Warning (Commit 7)
+                if ledger.total_revenue > 0:
+                    labor_pct = (Decimal("20.00") / ledger.total_revenue) * 100 # Mock calculation
+                    if labor_pct > 25:
+                        print(f"🚩 LABOR ALERT: {labor_pct:.1f}% of sales.")
 
-        elif choice == "4":
-            # Graceful Shutdown
-            print("\nExiting HospitalityOS...")
+                print(" [1] Add Item  [2] Remove  [3] Checkout  [Q] Back")
+                op = input("Action > ").strip().upper()
+                
+                if op == "1":
+                    handle_item_addition(menu, cart, sync_state, active_server)
+                elif op == "2":
+                    item_name = input("Item to remove: ")
+                    cart.void_item(item_name, staff=active_server, reason="User Error")
+                elif op == "3":
+                    process_checkout(active_server, table_num, cart, menu, ledger)
+                    break
+                elif op == "Q":
+                    break
+
+        elif main_choice == "2":
+            if active_server.dept.upper() == "MANAGER":
+                editor = MenuEditor(menu)
+                session = AdminSession(active_server, editor)
+                manager_menu(session, ledger)
+            else:
+                print("❌ ERROR: Manager credentials required.")
+                input("Press Enter...")
+
+        elif main_choice == "3":
+            print("Performing Atomic Shutdown...")
             save_system_state(menu, ledger.total_revenue)
-            print("💾 Shift state saved successfully. Goodbye!")
             break
 
-        else:
-            print("⚠️ Invalid selection. Please choose 1-4.")
-
-# Entry Point logic from Commit 47
 if __name__ == "__main__":
     try:
         main_loop()
-    except KeyboardInterrupt:
-        print("\n\nForced shutdown detected. Attempting emergency save...")
-        # Emergency save logic could go here
     except Exception as e:
-        print(f"☢️  CRITICAL SYSTEM FAILURE: {e}")
-
-
-    
+        print(f"☢️ CRITICAL SYSTEM FAILURE: {e}")
+        # In a real environment, we'd trigger an emergency log here.
