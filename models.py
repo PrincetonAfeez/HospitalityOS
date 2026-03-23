@@ -339,6 +339,11 @@ class ReceiptPrinter:
             print(f"Each ({txn.split_count} ways):      ${txn.per_person:>8.2f}")
         print("="*35 + "\n") # Footer
 
+        print("-" * 35)
+        print(f"TXN: {txn.txn_id}")
+        print(f"TIME: {txn.timestamp.strftime('%Y-%m-%d %H:%M')}")
+        print("="*35 + "\n")
+
 class Person:
     """
     The base blueprint for any human interacting with the system.
