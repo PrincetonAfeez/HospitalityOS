@@ -516,6 +516,11 @@ class HospitalityEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
     
+    def emergency_save(self, data: dict):
+        """Security: Write system state to disk in case of power failure."""
+        with open("system_backup.json", "w") as f:
+            json.dump(data, f, cls=HospitalityEncoder, indent=4)
+    
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
