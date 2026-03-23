@@ -3,6 +3,22 @@ import datetime
 import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Add this import
 
+def sanitize_input(func):
+    """
+    Commit 21: A Senior-level decorator to ensure all 
+    string-based inputs are stripped and cleaned before validation.
+    """
+    def wrapper(*args, **kwargs):
+        # We handle the input here, then pass the clean string to the function
+        result = func(*args, **kwargs)
+        if isinstance(result, str):
+            # Clean out common "injection" characters like semicolons or backslashes
+            return result.strip().replace(";", "").replace("\\", "")
+        return result
+    return wrapper
+
+# Now, we apply it to your existing functions:
+@sanitize_input
 def get_name(prompt):
     # Pattern: Allows letters, spaces, hyphens, and apostrophes.
     # Must start and end with a letter.
@@ -172,3 +188,4 @@ def get_staff_id(prompt):
             return staff_id
             
         print("❌ Error: Invalid ID Format. Please use 'EMP-' followed by digits (e.g., EMP-01).")
+
