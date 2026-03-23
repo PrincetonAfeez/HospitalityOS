@@ -6,6 +6,7 @@ Description: This module defines the architectural blueprints for the system.
 """
 import uuid # For generating unique IDs for transactions and staff
 import json # For data persistence and state management
+import copy # For deep copying complex objects when needed
 from datetime import datetime # For timestamping transactions
 from decimal import Decimal, ROUND_HALF_UP # For professional financial rounding
 # Import the globally defined Tax Rate (e.g., 0.08 for 8%)
@@ -91,6 +92,10 @@ class MenuItem:
     def __str__(self):
         """Standardizes the visual alignment for the POS menu display."""
         return f"[{self.category:10}] {self.name:25} ${self.price:>6.2f}"
+    
+    def clone(self) -> 'MenuItem':
+        """Architecture: Returns a deep copy to prevent cross-contamination of orders."""
+        return copy.deepcopy(self)
 
 class Menu:
     """A search-optimized collection of MenuItem objects."""
