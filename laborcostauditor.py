@@ -24,6 +24,31 @@ from settings.restaurant_defaults import * # ===================================
 # HELPER FUNCTIONS: DATA PARSING & TIME MATH
 # ==============================================================================
 
+class Shift:
+    """Requirement 6: Encapsulates time math and CA compliance logic."""
+    def __init__(self, clock_in: datetime, clock_out: datetime, break_minutes: int = 0):
+        self.clock_in = clock_in
+        self.clock_out = clock_out
+        self.break_minutes = Decimal(str(break_minutes))
+        
+    @property
+    def raw_hours(self) -> Decimal:
+        delta = self.clock_out - self.clock_in
+        if self.clock_out < self.clock_in: # Handle graveyard
+            delta += timedelta(days=1)
+        return Decimal(str(delta.total_seconds() / 3600))
+
+    @property
+    def net_hours(self) -> Decimal:
+        return self.raw_hours - (self.break_minutes / 60)
+    
+    @property
+    def is_ca_violation(self) -> bool:
+        """CA Law: Shift > 6hrs requires 30min break."""
+        if self.raw_hours > 6.0 and self.break_minutes < 30:
+            return True
+        return False
+    
 def calculate_shift_hours(clock_in, clock_out):
     """
     Calculates decimal hours between two time objects.
