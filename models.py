@@ -145,6 +145,12 @@ class Table:
         self.active_cart = None
         print(f"🧹 Table {self.number} is now clean and available.")
 
+    def assign_cart(self, cart: Cart):
+        if self.is_occupied:
+            raise TableAssignmentError(f"Table {self.number} is already in use!")
+        self.active_cart = cart
+        self.is_occupied = True
+        
 class Cart:
     def __init__(self, guest=None):
         self.items: list[MenuItem] = []
