@@ -76,10 +76,18 @@ def manager_menu(session: AdminSession):
         print("2. Toggle Item Availability")
         print("3. Exit Admin Mode")
         
+        
         choice = input("Select an option: ")
         if choice == "3": session.is_active = False
         # Logic for 1 and 2 will follow in next commits
-        
+
+        if choice == "1":
+            name = input("Enter item name: ")
+            new_price = get_decimal_input("Enter new price: $")
+            session.editor.update_price(name, new_price)
+            session.log_action(f"Price Change: {name} to {new_price}")
+
+            
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
 # ==============================================================================
