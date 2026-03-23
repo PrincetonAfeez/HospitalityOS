@@ -89,7 +89,19 @@ class LaborAuditor:
             s, sh = entry['staff'], entry['shift']
             print(f"{s.full_name:<20} | {sh.net_hours:<8.2f} | ${s.hourly_rate * sh.net_hours:>9.2f}")
 
-    
+    def export_payroll(self, filename="payroll_final.csv"):
+        with open(filename, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Employee", "Net Hours", "Total Pay"])
+            # ... loop and write logic ...
+        print(f"✅ Payroll export created: {filename}")
+        
+    @property
+    def labor_percentage(self) -> Decimal:
+        total_wages = sum(e['staff'].hourly_rate * e['shift'].net_hours for e in self.audited_shifts)
+        if self.net_sales == 0: return Decimal("0.00")
+        return (total_wages / self.net_sales) * 100
+
 def calculate_shift_hours(clock_in, clock_out):
     """
     Calculates decimal hours between two time objects.
