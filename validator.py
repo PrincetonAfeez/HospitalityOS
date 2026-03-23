@@ -2,6 +2,7 @@
 import datetime
 import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Add this import
+from models import HospitalityError
 
 def sanitize_input(func):
     """
@@ -194,3 +195,8 @@ def get_staff_id(prompt):
             
         print("❌ Error: Invalid ID Format. Please use 'EMP-' followed by digits (e.g., EMP-01).")
 
+def validate_input_safety(user_input: str):
+    """Commit 24: Check for forbidden keywords to prevent shell injection."""
+    forbidden = ["DROP TABLE", "DELETE FROM", "sudo", "rm -rf"]
+    if any(term in user_input.upper() for term in forbidden):
+        raise HospitalityError("Security Alert: Forbidden input detected.")
