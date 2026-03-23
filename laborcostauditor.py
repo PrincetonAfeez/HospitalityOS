@@ -21,7 +21,9 @@ from decimal import Decimal
 # Custom Packages & Modules
 from HospitalityOS.models import Staff
 from validator import get_int, get_float, get_time, get_yes_no
-from settings.restaurant_defaults import * # ==============================================================================
+from settings.restaurant_defaults import OVERTIME_LIMIT, MIN_WAGE
+
+# ==============================================================================
 # HELPER FUNCTIONS: DATA PARSING & TIME MATH
 # ==============================================================================
 
@@ -58,6 +60,9 @@ class LaborAuditor:
 
     def add_shift(self, staff: Staff, shift: Shift):
         self.audited_shifts.append({"staff": staff, "shift": shift})
+    
+    def calculate_ot(self, hours: Decimal) -> Decimal:
+        return max(Decimal("0.00"), hours - Decimal(str(OVERTIME_LIMIT)))
             
 def calculate_shift_hours(clock_in, clock_out):
     """
