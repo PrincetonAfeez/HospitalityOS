@@ -64,7 +64,8 @@ class MenuItem:
         self.par_level = int(par) # Minimum stock required on the line
         self.modifiers = [] # Collection to hold up to 3 Modifier objects
         self.kitchen_notes = "" # Custom string for special prep instructions
-    
+        self.is_active = True
+
     def add_modifier(self, mod: 'Modifier'):
         """Task 8: Enforces a business limit of 3 modifiers per item."""
         if mod in self.modifiers:
@@ -140,7 +141,14 @@ class MenuEditor:
             adjustment = (item.price * (percentage / 100)).quantize(Decimal("0.01"))
             item.price += adjustment
         print(f"📈 Applied {percentage}% surge to all {category} items.")
-        
+    
+    def toggle_item_status(self, item_name: str):
+        item = self.menu.get_item_by_name(item_name)
+        if item:
+            item.is_active = not item.is_active
+            status = "Active" if item.is_active else "Inactive"
+            print(f"🔄 {item_name} is now {status}.")
+
         
 class SecurityLog:
     """
