@@ -4,6 +4,8 @@ import os
 from decimal import Decimal
 from models import MenuItem, Menu, Staff
 import tempfile
+import shutil
+from datetime import datetime
 
 def atomic_save_json(data, filename):
     """
@@ -17,7 +19,15 @@ def atomic_save_json(data, filename):
     
     # Atomic swap: rename temp to original (overwrites existing safely)
     os.replace(temp_path, filename)
-    
+
+def archive_previous_state(filename="restaurant_state.json"):
+    """Commit 27: Moves old state to a timestamped backup before reset."""
+    if os.path.exists(filename):
+        os.makedirs("backups", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        shutil.copy(filename, f"backups/state_backup_{timestamp}.json")
+        print(f"📦 Shift archived to backups/state_backup_{timestamp}.json")
+        
 def load_menu_from_csv(file_path: str) -> Menu:
     restaurant_menu = Menu()
     try:
