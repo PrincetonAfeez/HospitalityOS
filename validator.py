@@ -162,12 +162,12 @@ def get_tip_logic(prompt, subtotal):
         if not get_tip:
             print("Error: Tip is required. Enter 0 if no tip.")
             continue
-        if val > 100:
-            if not get_yes_no(f"⚠️ Tip is {val}%. Is this correct? (y/n): "):
-                continue
+        
         try:
             # Percentage logic
-            
+            if val > 100:
+                if not get_yes_no(f"⚠️ Tip is {val}%. Is this correct? (y/n): "):
+                    continue
             if "%" in get_tip:
                 val = Decimal(get_tip.replace("%", ""))
                 if val >= 0:
