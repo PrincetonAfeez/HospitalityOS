@@ -48,6 +48,10 @@ class Modifier:
         """Serializes the modifier for the 'Shared Brain' JSON state."""
         return {"name": self.name, "price": str(self.price)}
     
+    def __eq__(self, other):
+        if not isinstance(other, Modifier): return False
+        return self.name == other.name and self.price == other.price
+    
 class MenuItem:
     """The base object for every product sold in the restaurant."""
     def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
@@ -172,7 +176,8 @@ class Cart:
             # The 'Error Bridge': Raise instead of print
             raise InsufficientStockError(f"Inventory Failure: {item.name} is 86'd and cannot be sold.")
         
-        self.items.append(item)
+        new_item = item.clone() # Now using the clone logic from Commit 25
+        self.items.append(new_item)
         item.line_inv -= 1
         print(f"✅ Added {item.name}. Subtotal: ${self.subtotal:.2f}")
 
