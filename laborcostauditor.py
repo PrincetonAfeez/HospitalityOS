@@ -19,6 +19,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 # Custom Packages & Modules
+from HospitalityOS.models import Staff
 from validator import get_int, get_float, get_time, get_yes_no
 from settings.restaurant_defaults import * # ==============================================================================
 # HELPER FUNCTIONS: DATA PARSING & TIME MATH
@@ -48,7 +49,16 @@ class Shift:
         if self.raw_hours > 6.0 and self.break_minutes < 30:
             return True
         return False
-    
+
+class LaborAuditor:
+    """Objective 3: Centralizes labor analysis and POS sync."""
+    def __init__(self, target_sales: Decimal = Decimal("0.00")):
+        self.net_sales = target_sales
+        self.audited_shifts = []
+
+    def add_shift(self, staff: Staff, shift: Shift):
+        self.audited_shifts.append({"staff": staff, "shift": shift})
+            
 def calculate_shift_hours(clock_in, clock_out):
     """
     Calculates decimal hours between two time objects.
