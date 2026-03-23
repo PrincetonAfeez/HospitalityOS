@@ -79,6 +79,10 @@ def clean_currency(val_str: str) -> str:
     """Commit 22: Strips currency symbols and commas for Decimal conversion."""
     return val_str.replace("$", "").replace(",", "").strip()
 
+def format_currency(value: Decimal) -> str:
+    """Commit 25: Standardizes Decimal output to $0.00 format."""
+    return f"${value:,.2f}"
+
 def get_float(prompt, min_val=None, max_val=None):
     while True:
         try:
@@ -158,28 +162,26 @@ def get_yes_no(prompt):
 
 def get_tip_logic(prompt, subtotal):
     while True:
-        get_tip = input(prompt).strip()
-        if not get_tip:
-            print("Error: Tip is required. Enter 0 if no tip.")
-            continue
+        raw_input = input(prompt).strip().replace("$", "")
+        if not raw_input: continue
         
         try:
-            # Percentage logic
-            if val > 100:
-                if not get_yes_no(f"⚠️ Tip is {val}%. Is this correct? (y/n): "):
+            # Handle Percentage
+            if "%" in raw_input:
+                percent = Decimal(raw_input.replace("%", ""))
+                # Verify massive tips (Commit 25: Human Error Check)
+                if percent > 100 and not get_yes_no(f"⚠️ Tip is {percent}%. Correct? "):
                     continue
-            if "%" in get_tip:
-                val = Decimal(get_tip.replace("%", ""))
-                if val >= 0:
-                    return (subtotal * (val / 100)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                return (subtotal * (percent / 100)).quantize(Decimal("0.01"))
             
-            # Dollar logic (handles '$' if present)
-            clean_val = get_tip.replace("$", "")
-            val = Decimal(clean_val)
-            if val >= 0:
-                return val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+            # Handle Dollar Amount
+            val = Decimal(raw_input)
+            if val > subtotal and not get_yes_no(f"⚠️ Tip (${val}) is more than the total. Correct? "):
+                continue
+            return val.quantize(Decimal("0.01"))
             
-            print("Error: Please include % or $ (e.g., '15%' or '$5').")
+        except (InvalidOperation, ValueError):
+            print("❌ Invalid: Use '15%' or '5.00'")
             
         # This catches BOTH standard value errors AND decimal-specific errors
         except (ValueError, InvalidOperation): 
