@@ -212,6 +212,7 @@ class Cart:
 class Transaction:
     """The final financial record representing a paid bill."""
     def __init__(self, cart: Cart, table_num: int, staff: Staff):
+        self.txn_id = str(uuid.uuid4())[:8].upper() # Unique 8-char ID
         self.cart = cart
         self.table_num = table_num
         # Store the whole object, not just the string ID
@@ -277,6 +278,7 @@ class ReceiptPrinter:
     @staticmethod
     def print_bill(txn: Transaction):
         """Static method to generate a professional receipt in the console."""
+        print(f"{'ID: ' + txn.txn_id:^35}") # Now displaying the UUID
         print("\n" + "="*35)
         print(f"{'HOSPITALITY OS RECEIPT':^35}") # Header
         print(f"{'Table: ' + str(txn.table_num):^35}") # Metadata
