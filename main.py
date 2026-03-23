@@ -220,7 +220,7 @@ def print_shift_report(analytics: AnalyticsEngine):
 
     # Final cleanup logic
     auditor.export_payroll(f"payroll_{datetime.now().strftime('%Y%m%d')}.csv")
-    
+
 def main():
     """Primary Controller: Orchestrates the Hospitality OS session."""
     # 1. Boot-up Sequence
@@ -307,4 +307,10 @@ def main():
             clear_screen() # Refresh UI for next action
 
 if __name__ == "__main__":
-    main() # Execute the entry point
+    if __name__ == "__main__":
+    try:
+        main_loop()
+    except Exception as e:
+        print(f"☢️ Critical System Failure: {e}")
+        # Emergency Save logic
+    
