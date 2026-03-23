@@ -79,11 +79,17 @@ class LaborAuditor:
     def calculate_ot(self, hours: Decimal) -> Decimal:
         return max(Decimal("0.00"), hours - Decimal(str(OVERTIME_LIMIT)))
             
-    
     def validate_shift(self, shift: Shift):
         if shift.raw_hours > 16: # No legal double-shifts > 16hrs
             raise ComplianceError("Shift exceeds 16-hour safety limit.")
-        
+    
+    def generate_summary(self):
+        print(f"\n{'NAME':<20} | {'HOURS':<8} | {'PAY':<10}")
+        for entry in self.audited_shifts:
+            s, sh = entry['staff'], entry['shift']
+            print(f"{s.full_name:<20} | {sh.net_hours:<8.2f} | ${s.hourly_rate * sh.net_hours:>9.2f}")
+
+    
 def calculate_shift_hours(clock_in, clock_out):
     """
     Calculates decimal hours between two time objects.
