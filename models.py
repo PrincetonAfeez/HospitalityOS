@@ -124,6 +124,19 @@ class SecurityLog:
 # CART & FINANCIAL MODELS
 # ==============================================================================
 
+class Table:
+    """Requirement 12: Manage physical-to-digital state mapping."""
+    def __init__(self, table_number: int, capacity: int):
+        self.number = table_number
+        self.capacity = capacity
+        self.is_occupied = False
+        self.active_cart = None
+
+    def host_guests(self, cart: Cart):
+        self.is_occupied = True
+        self.active_cart = cart
+
+        
 class Cart:
     def __init__(self, guest=None):
         self.items: list[MenuItem] = []
