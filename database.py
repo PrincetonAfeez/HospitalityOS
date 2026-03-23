@@ -3,7 +3,21 @@ import json
 import os
 from decimal import Decimal
 from models import MenuItem, Menu, Staff
+import tempfile
 
+def atomic_save_json(data, filename):
+    """
+    Commit 26: Prevents file corruption by writing to a temp file 
+    and then performing an atomic 'swap'.
+    """
+    # Create temp file in the same directory
+    fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(filename), text=True)
+    with os.fdopen(fd, 'w') as f:
+        json.dump(data, f, indent=4)
+    
+    # Atomic swap: rename temp to original (overwrites existing safely)
+    os.replace(temp_path, filename)
+    
 def load_menu_from_csv(file_path: str) -> Menu:
     restaurant_menu = Menu()
     try:
