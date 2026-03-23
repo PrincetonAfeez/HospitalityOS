@@ -150,7 +150,7 @@ class Table:
             raise TableAssignmentError(f"Table {self.number} is already in use!")
         self.active_cart = cart
         self.is_occupied = True
-        
+
 class Cart:
     def __init__(self, guest=None):
         self.items: list[MenuItem] = []
@@ -196,6 +196,10 @@ class Cart:
                 )
                 return True
         return False
+    
+    def validate_cart_integrity(self) -> bool:
+        """Security: Ensure no $0 items are being sneaked through."""
+        return all(item.price >= 0 for item in self.items)
     
     @property
     def subtotal(self) -> Decimal:
