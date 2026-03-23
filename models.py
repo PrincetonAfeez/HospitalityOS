@@ -194,12 +194,15 @@ class Cart:
 
 class Transaction:
     """The final financial record representing a paid bill."""
-    def __init__(self, cart: Cart, table_num: int, staff_id: str = "OFFLINE"):
-        self.cart = cart # Full Cart object reference
-        self.table_num = table_num # Associated table number
-        self.staff_id = staff_id # ID of the server who closed the bill
-        self.tip = Decimal("0.00") # Start tip at zero
-        self.split_count = 1 # Start split at one person
+    def __init__(self, cart: Cart, table_num: int, staff: Staff):
+        self.cart = cart
+        self.table_num = table_num
+        # Store the whole object, not just the string ID
+        self.staff = staff 
+        self.staff_id = staff.staff_id # For backward compatibility in logs
+        self.tip = Decimal("0.00")
+        self.split_count = 1
+        self.timestamp = datetime.now()
 
     @property
     def final_total(self) -> Decimal:
@@ -225,20 +228,21 @@ class Transaction:
             print("❌ Invalid tip format.")
             return False
     
-    def to_dict(self):
-        """Serializes the entire transaction for the permanent 'transaction_log.json'."""
+    def to_dict(self) -> dict:
+        """Serializes the transaction with deep staff metadata."""
         return {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), # Current time
-            "staff_id": self.staff_id, # Server ID
-            "table_num": self.table_num, # Table ID
-            "items": [item.to_dict() for item in self.cart.items], # Deep copy of items
-            "financials": { # Dictionary of string-converted Decimals
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "staff_id": self.staff.staff_id,
+            "staff_name": self.staff.full_name, # From Person base class
+            "staff_role": self.staff.role,
+            "table_num": self.table_num,
+            "items": [item.to_dict() for item in self.cart.items],
+            "financials": {
                 "subtotal": str(self.cart.subtotal),
                 "tax": str(self.cart.sales_tax),
                 "tip": str(self.tip),
                 "grand_total": str(self.final_total)
-            },
-            "split_count": self.split_count # Number of payers
+            }
         }
 
 # ==============================================================================
