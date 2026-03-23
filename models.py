@@ -155,6 +155,14 @@ class MenuEditor:
         if item:
             item.par_level = new_par
             print(f"📦 Par level for {item_name} updated to {new_par} units.")
+    
+    def add_new_item(self, item: MenuItem):
+        """Commit 35: Safely add items while checking for naming collisions."""
+        if any(i.name.lower() == item.name.lower() for i in self.menu.items):
+            print(f"❌ Error: An item named '{item.name}' already exists.")
+            return False
+        self.menu.add_item(item)
+        return True
 
         
 class SecurityLog:
