@@ -242,36 +242,60 @@ class ReceiptPrinter:
         print("="*35 + "\n") # Footer
 
 class Person:
-    """The base blueprint for any human interacting with the system."""
-    def __init__(self, first_name, last_name):
-        self.first_name = first_name # Validated string
-        self.last_name = last_name # Validated string
+    """
+    The base blueprint for any human interacting with the system.
+    Requirement: DRY Principle - Centralize identity logic.
+    """
+    def __init__(self, first_name: str, last_name: str) -> None:
+        self.first_name: str = first_name.strip().title()
+        self.last_name: str = last_name.strip().title()
 
     @property
-    def full_name(self):
+    def full_name(self) -> str:
         """Returns the formatted full name for receipts or reports."""
         return f"{self.first_name} {self.last_name}"
 
-# NOTE: Guest class has been moved to digitalfrontdesk.py per architecture requirements.
-
+    def __repr__(self) -> str:
+        """Technical representation for debugging."""
+        return f"<{self.__class__.__name__}: {self.full_name}>"
+    
 class Staff(Person):
     """
-    Represents an employee.
-    Department: FOH (Front of House) or BOH (Back of House)
-    Role: Manager, Server, Chef, Dishwasher, etc.
+    Represents an employee with role-based logic and CA labor compliance.
+    Requirement: Task 14 & 20 - Wage Guardrails and Shift Tracking.
     """
-    def __init__(self, staff_id, first_name, last_name, dept, role):
+    def __init__(self, staff_id: str, first_name: str, last_name: str, dept: str, role: str, hourly_rate: float):
         super().__init__(first_name, last_name)
-        self.staff_id = staff_id # E.g., EMP-01
-        self.dept = dept # Must be 'FOH' or 'BOH'
-        self.role = role # E.g., 'Manager', 'Server', 'Line Cook'
-        self.total_sales = Decimal("0.00") # Only applicable to Sales roles
-        self.shift_start = None # Initialize as None
-        self.shift_end = None # Initialize as None
+        self.staff_id = staff_id
+        self.dept = dept.upper()  # Normalize to 'FOH' or 'BOH'
+        self.role = role.title()
+        
+        # This triggers the @hourly_rate.setter logic below
+        self.hourly_rate = hourly_rate 
+        
+        self.total_sales = Decimal("0.00")
+        self.shift_start = None
+        self.shift_end = None
 
-    def __str__(self):
-        """Displays staff details for the Auditor or Manager reports."""
-        return f"[{self.staff_id}] {self.full_name} - {self.dept} ({self.role})"
+    @property
+    def hourly_rate(self) -> Decimal:
+        return self._hourly_rate
+
+    @hourly_rate.setter
+    def hourly_rate(self, value: float) -> None:
+        """Requirement 14: CA Min Wage Guardrail (2026 Standard: $16.00)"""
+        min_wage = Decimal("16.00")
+        input_wage = Decimal(str(value))
+        
+        if input_wage < min_wage:
+            print(f"⚠️ COMPLIANCE ALERT: {value} is below CA Min Wage. Corrected to {min_wage}.")
+            self._hourly_rate = min_wage
+        else:
+            self._hourly_rate = input_wage
+
+    def __str__(self) -> str:
+        return f"[{self.staff_id}] {self.full_name} - {self.role} ({self.dept})"
+    
 
     def calculate_productivity(self, hours_worked):
         """Task 3: Executive Metric - Optimized for Role-specific tracking."""
