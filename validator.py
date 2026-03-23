@@ -181,9 +181,9 @@ def get_tip_logic(prompt, subtotal):
             print("Error: Please enter a numeric value with % or $.")
 
 def get_staff_id(prompt):
-    """Task 9: RegEx Validation for Staff IDs (Format: EMP-00)"""
-    # Pattern: Starts with EMP, followed by a dash, followed by 1 or more digits
-    staff_id_regex = r"^EMP-\d+$"
+    """Commit 23: Enforce strict length on Staff IDs (2-3 digits)."""
+    # Pattern: EMP- followed by exactly 2 to 3 digits
+    staff_id_regex = r"^EMP-\d{2,3}$"
     
     while True:
         # We .upper() it here so the user can type 'emp-01' and it still passes
