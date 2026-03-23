@@ -86,8 +86,11 @@ def manager_menu(session: AdminSession):
             new_price = get_decimal_input("Enter new price: $")
             session.editor.update_price(name, new_price)
             session.log_action(f"Price Change: {name} to {new_price}")
+        elif choice == "2":
+            name = input("Enter item name to toggle: ")
+            session.editor.toggle_item_status(name)
+            session.log_action(f"Status Toggle: {name}")
 
-            
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
 # ==============================================================================
