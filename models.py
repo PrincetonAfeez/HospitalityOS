@@ -4,7 +4,7 @@ Description: This module defines the architectural blueprints for the system.
              It uses Decimal for financial precision and includes business 
              logic for inventory, tax, and California-compliant labor tracking.
 """
-
+import uuid # For generating unique IDs for transactions and staff
 from datetime import datetime # For timestamping transactions
 from decimal import Decimal, ROUND_HALF_UP # For professional financial rounding
 # Import the globally defined Tax Rate (e.g., 0.08 for 8%)
