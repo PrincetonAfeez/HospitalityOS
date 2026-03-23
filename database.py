@@ -66,6 +66,10 @@ def load_menu_from_csv(file_path: str) -> Menu:
         print(f"❌ CSV Header Error: Missing column {e}")
     return restaurant_menu
 
+def clean_row(row: dict) -> dict:
+    """Commit 29: Strips whitespace and normalizes keys for any CSV row."""
+    return {k.strip().lower(): v.strip() for k, v in row.items()}
+
 def save_system_state(menu, net_sales, filename="restaurant_state.json"):
     """Saves the current sales and inventory breakdown to the 'Shared Brain'."""
     state = {
