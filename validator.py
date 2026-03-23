@@ -74,11 +74,16 @@ def get_int(prompt, min_val=None, max_val=None, exact_len=None, allow_zero=False
         except ValueError:
             print("Error: Please enter a valid whole number.")
 
+def clean_currency(val_str: str) -> str:
+    """Commit 22: Strips currency symbols and commas for Decimal conversion."""
+    return val_str.replace("$", "").replace(",", "").strip()
+
 def get_float(prompt, min_val=None, max_val=None):
     while True:
         try:
             # Convert input to Decimal immediately
-            val = Decimal(input(prompt).replace("$", "")) 
+            raw = input(prompt)
+            val = Decimal(clean_currency(raw))
             if min_val is not None and val < Decimal(str(min_val)):
                 print(f"    ❌ Error: Value must be at least {min_val}.")
                 continue
