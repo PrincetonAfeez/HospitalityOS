@@ -436,6 +436,16 @@ class Staff(Person):
             "is_profitable": splh > Decimal("100.00") # Business logic: $100/hr goal
         }
 
+class BillSummary:
+    """Requirement: Immutable financial snapshot for v4.0."""
+    def __init__(self, subtotal: Decimal, tax_rate: Decimal, exempt: bool = False):
+        self.subtotal = subtotal
+        self.tax = Decimal("0.00") if exempt else (subtotal * tax_rate).quantize(Decimal("0.01"))
+        self.grand_total = self.subtotal + self.tax
+
+    def __repr__(self):
+        return f"<Bill: ${self.grand_total}>"
+    
 class InventoryManager:
     """Logic engine to analyze stock gaps and prep requirements."""
     def __init__(self, menu):
