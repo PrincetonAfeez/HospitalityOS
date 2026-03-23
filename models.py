@@ -120,7 +120,20 @@ class Menu:
             if item.name.lower() == name.lower(): # Match normalized strings
                 return item # Return the matching object
         return None # Return None if no match is found
-    
+
+class MenuEditor:
+    """Commit 31: Controller for safe menu modifications and price adjustments."""
+    def __init__(self, menu: Menu):
+        self.menu = menu
+
+    def update_price(self, item_name: str, new_price: Decimal):
+        item = self.menu.get_item_by_name(item_name)
+        if item:
+            old_price = item.price
+            item.price = new_price
+            print(f"💰 Price Update: {item_name} changed from ${old_price} to ${new_price}")    
+
+        
 class SecurityLog:
     """
     Objective 4: Centralized security audit trail.
