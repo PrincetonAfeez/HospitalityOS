@@ -136,7 +136,11 @@ class Table:
         self.is_occupied = True
         self.active_cart = cart
 
-        
+    def clear_table(self):
+        self.is_occupied = False
+        self.active_cart = None
+        print(f"🧹 Table {self.number} is now clean and available.")
+
 class Cart:
     def __init__(self, guest=None):
         self.items: list[MenuItem] = []
