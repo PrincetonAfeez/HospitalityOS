@@ -58,6 +58,17 @@ class LaborAuditor:
         self.net_sales = target_sales
         self.audited_shifts = []
 
+    def sync_with_ledger(self):
+        """
+        Commit 15: Pulls real-time revenue from the DailyLedger Singleton.
+        Eliminates the need for manual JSON file reading.
+        """
+        from models import DailyLedger
+        
+        ledger = DailyLedger()
+        self.net_sales = ledger.total_revenue
+        print(f"🔄 Sync Complete: Auditor is now using current revenue: ${self.net_sales:.2f}")
+    
     def add_shift(self, staff: Staff, shift: Shift):
         self.audited_shifts.append({"staff": staff, "shift": shift})
     
@@ -80,7 +91,6 @@ def calculate_shift_hours(clock_in, clock_out):
 
     duration = end_dt - start_dt
     return duration.total_seconds() / 3600
-
 
 def format_employee_name(raw_name):
     """
