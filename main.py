@@ -46,14 +46,13 @@ def perform_staff_login():
         print(f"{'STAFF LOGIN REQUIRED':^45}")
         print("="*45)
         login_id = get_staff_id("Enter Staff ID (e.g., EMP-01): ") # RegEx validated input
-        active_server = validate_staff_login(login_id) # Cross-reference CSV/Database
-        if active_server:
-            print(f"✅ Welcome, {active_server.name}!") # Success feedback
-        else:
-            print(f"❌ Access Denied: ID '{login_id}' not found.") # Failure feedback
+        active_server = validate_staff_login(login_id)
+    if active_server:
+        # Changed .name to .full_name to match Commit 1 Refactor
+        print(f"✅ Welcome, {active_server.full_name}!") 
     return active_server # Return the Staff object for session use
 
-def handle_item_addition(menu, cart, sync_callback):
+def handle_item_addition(menu, cart, sync_callback, active_server):
     """Logic for finding items, adding modifiers, and updating the Shared Brain."""
     item_name = get_name("Enter item name exactly: ") # Validated string input
     found_item = menu.find_item(item_name) # Search menu collection
@@ -68,27 +67,27 @@ def handle_item_addition(menu, cart, sync_callback):
                 mod_p = get_float(f"Enter price for {mod_name}: ", min_val=0.0) # Modifier price
                 found_item.add_modifier(Modifier(mod_name, mod_p)) # Attach to item
         
-        cart.add_to_cart(found_item) # Move item into active session cart
-        sync_callback(cart) # Update restaurant_state.json via callback
+        try:
+            # COMMIT 4 BRIDGE: Catch the inventory exception
+            cart.add_to_cart(found_item)
+            sync_callback(cart)
+        except InsufficientStockError as e:
+            print(f"\n⚠️ POS ALERT: {e}")
+            input("Press Enter to acknowledge...")
     else:
         print(f"❌ '{item_name}' not found on menu.")
     input("\nPress Enter to continue...")
 
 def handle_item_removal(active_server, cart, sync_callback):
-    """Requirement 8: Removes items and logs 'Voids' to security.log."""
     if not cart.items:
         print("Your cart is empty!")
     else:
         item_to_remove = input("Which item would you like to remove? ").strip()
-        if cart.remove_from_cart(item_to_remove): # Attempt list removal
-            # Security Audit Trail logic
-            now = datetime.datetime.now().strftime("%I:%M:%S %p") # Current timestamp
-            log_entry = f"[{now}] VOID: {item_to_remove} removed by {active_server.name} ({active_server.staff_id})\n"
-            with open("security.log", "a") as f: # Open in Append mode
-                f.write(log_entry) # Write the void record
-            sync_callback(cart) # Update the Shared Brain immediately
+        # COMMIT 5 BRIDGE: Use the new void logic that logs automatically
+        if cart.void_item(item_to_remove, staff=active_server, reason="UI Removal"):
+            sync_callback(cart)
         else:
-            print(f"❌ '{item_to_remove}' not found in cart.")
+            print(f"❌ '{item_to_remove}' not in cart.")
     input("\nPress Enter to continue...")
 
 def process_checkout(active_server, table_num, cart, menu, current_sales):
@@ -97,29 +96,28 @@ def process_checkout(active_server, table_num, cart, menu, current_sales):
         print("Cart is empty!")
         return current_sales # Return current sales unchanged
     
-    # Initialize Transaction with cart and staff metadata
-    txn = Transaction(cart, table_num, staff_id=active_server.staff_id)
+    # COMMIT 7 & 8 BRIDGE: Pass the whole 'active_server' object, not just ID
+    txn = Transaction(cart, table_num, staff=active_server)
     
     print(f"\nSubtotal: ${cart.subtotal:.2f}")
-    tip_input = input("Enter tip (e.g., 20% or 10.00): ") # Flexible tip entry
-    txn.apply_tip(tip_input) # Logic handled in Transaction model
+    tip_input = input("Enter tip (e.g., 20% or 10.00): ")
+    txn.apply_tip(tip_input)
     
-    split_input = input("How many ways to split? (1-10): ") # Payment splitting
+    split_input = input("How many ways to split? (1-10): ")
     txn.split_count = int(split_input) if split_input.isdigit() else 1
     
     clear_screen()
-    ReceiptPrinter.print_bill(txn) # Visual printout
+    # ReceiptPrinter now pulls Server Name from txn.staff.full_name
+    ReceiptPrinter.print_bill(txn)
     
-    # Persistent Logging for Day 7 Analytics
-    save_to_json(txn.to_dict(), "transaction_log.json") # Append to history
+    # Save the deep-serialized dictionary to the log
+    save_to_json(txn.to_dict(), "transaction_log.json")
     
-    # Update Daily Ledger
-    new_total = current_sales + cart.subtotal # Add subtotal to daily net
-    save_system_state(menu, new_total) # Save to database.py state handler
+    new_total = current_sales + cart.subtotal
+    save_system_state(menu, new_total)
     
-    # Cleanup session
     if os.path.exists("restaurant_state.json"):
-        os.remove("restaurant_state.json") # Wipe temporary sync file
+        os.remove("restaurant_state.json")
         
     input("\nTransaction Complete. Press Enter for New Table...")
     return new_total # Return the updated sales for real-time labor tracking
