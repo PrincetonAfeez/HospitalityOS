@@ -34,6 +34,30 @@ def display_menu(menu_obj):
         print(item) # Utilize the __str__ method in MenuItem model
     print("-" * 44)
 
+def display_staff_performance(active_server: Staff):
+    """
+    Objective 3: UI component for Sales per Labor Hour report.
+    In a real scenario, this would load from transaction_log.json.
+    """
+    # For this demo/commit, we use the active session's sales
+    # but the logic is prepared for a full list of Transaction objects
+    report = active_server.generate_shift_report(transactions=[]) 
+    
+    print("\n" + "="*35)
+    print(f"{'OFFICIAL SHIFT REPORT':^35}")
+    print("="*35)
+    print(f"Staff:          {report['staff']}")
+    print(f"Hours Worked:   {report['hours_worked']} hrs")
+    print(f"Total Sales:    ${report['total_sales']:,.2f}")
+    print(f"Sales / Hour:   ${report['sales_per_hour']:,.2f}")
+    print("-" * 35)
+    
+    if report['is_profitable']:
+        print("✅ PERFORMANCE: ABOVE TARGET")
+    else:
+        print("🚩 PERFORMANCE: BELOW TARGET")
+    print("="*35)
+
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
 # ==============================================================================
@@ -172,7 +196,7 @@ def main():
                     print("   Current labor costs exceed 20% of sales target!")
             
             # Action Menu
-            print(" [1] View Menu\n [2] Add Item\n [3] Remove Item\n [4] Checkout\n [5] Prep List\n [Q] Cancel Table")
+            print(" [1] View Menu\n [2] Add Item\n [3] Remove Item\n [4] Checkout\n [5] Prep List\n [6] Staff Report\n [Q] Cancel Table")
             choice = input("Selection > ").strip().upper()
             
             if choice == '1':
@@ -197,6 +221,10 @@ def main():
                 print("\n" + "="*30 + f"\n{'PREP LIST':^30}\n" + "="*30)
                 for entry in prep_list:
                     print(f"- {entry['name']:<15} Need: {entry['need']}")
+                input("\nPress Enter to return...")
+            
+            elif choice == '6':
+                display_staff_performance(active_server)
                 input("\nPress Enter to return...")
                 
             elif choice == 'Q':
