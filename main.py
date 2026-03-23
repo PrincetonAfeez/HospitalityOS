@@ -3,7 +3,7 @@ import re
 import datetime 
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
-from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id, get_decimal_input, get_yes_no, sanitize_input
+from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id, get_decimal_input,  sanitize_input
 from storage import save_to_json
 from models import (
     Cart, ReceiptPrinter, Transaction, Staff, MenuEditor, AnalyticsEngine,
@@ -67,6 +67,22 @@ class AdminSession:
 
     def log_action(self, action: str):
         print(f"🔒 [ADMIN LOG] {self.staff.name} performed: {action}")
+
+class AnalyticsEngine:
+    """Commit 42: Logic for calculating sales trends and item popularity."""
+    def __init__(self, ledger: DailyLedger, menu: Menu):
+        self.ledger = ledger
+        self.menu = menu
+
+    def get_top_performing_items(self, limit=3):
+        # Sorting items based on how much inventory was used
+        sorted_items = sorted(self.menu.items, key=lambda x: (x.par_level - x.stock.total), reverse=True)
+        return sorted_items[:limit]
+    
+    def get_reorder_list(self):
+        """Commit 43: Returns items that are below 25% of their par level."""
+        return [item for item in self.menu.items if item.stock.total < (item.par_level * 0.25)]
+    
 
 def manager_menu(session: AdminSession):
     """Commit 37: Dedicated UI loop for restaurant configuration."""
@@ -189,6 +205,13 @@ def process_checkout(active_server, table_num, cart, menu, current_sales):
 # MAIN APPLICATION ENGINE
 # ==============================================================================
 
+def print_shift_report(analytics: AnalyticsEngine):
+    print("\n" + "█"*40)
+    print(f"{'FINAL SHIFT REPORT':^40}")
+    print("█"*40)
+    print(f"Total Revenue: ${analytics.ledger.total_revenue:.2f}")
+    print(f"Total Transactions: {analytics.ledger.transaction_count}")
+    
 def main():
     """Primary Controller: Orchestrates the Hospitality OS session."""
     # 1. Boot-up Sequence
