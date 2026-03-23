@@ -526,6 +526,11 @@ class DailyLedger:
         self.total_revenue += amount
         self.transaction_count += 1
 
+    def get_shift_summary(self) -> str:
+        ledger = DailyLedger()
+        return f"Shift End: {ledger.transaction_count} sales | Total: ${ledger.total_revenue:.2f}"
+    
+
 class HospitalityEncoder(json.JSONEncoder):
     """Utility: Serializes Decimal and DateTime objects for JSON storage."""
     def default(self, obj):
