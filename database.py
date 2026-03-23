@@ -99,6 +99,15 @@ def load_system_state(menu, filename="restaurant_state.json"):
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return Decimal("0.00")
 
+def check_database_integrity():
+    """Commit 30: Pre-flight check to ensure all data files exist."""
+    required = ["staff.csv", "menu.csv"]
+    for f in required:
+        if not os.path.exists(f):
+            print(f"🚨 CRITICAL: Missing database file: {f}")
+            return False
+    return True
+
 def initialize_system_state(menu):
     """Handles the start-of-shift logic."""
     filename = "restaurant_state.json"
