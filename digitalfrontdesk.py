@@ -21,29 +21,25 @@ class Guest(Person):
     Requirement 7-8, 40, 42: Guest Identity Logic.
     Centralized here to keep the core models.py focused on Staff and Inventory.
     """
-    def __init__(self, guest_id, first_name, last_name, phone, allergies=None):
-        # Initialize the 'Person' base class with names
+    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: int, allergies: list[str] = None) -> None:
+        # Initialize the 'Person' base class (Commit 1 logic)
         super().__init__(first_name, last_name)
-        # Unique identifier (e.g., GST-A1B2)
-        self.guest_id = guest_id 
-        # Validated 10-digit phone number
-        self.phone = phone 
-        # List of critical safety items (default to empty list if None)
-        self.allergies = allergies if allergies else [] 
-        # Requirement 8: Running total of points for rewards
-        self.loyalty_points = 0 
-        # Requirement 40: Flag for business or tax-exempt entities
-        self.is_tax_exempt = False 
+        
+        self.guest_id: str = guest_id 
+        self.phone: int = phone 
+        self.allergies: list[str] = allergies if allergies else [] 
+        self.loyalty_points: int = 0 
+        self.is_tax_exempt: bool = False 
 
-    def add_loyalty_points(self, bill_subtotal):
-        """Task 8: Executive Metric - 1 point awarded per $10 of spend."""
-        points_earned = int(bill_subtotal // 10) # Drop remainder decimals
-        self.loyalty_points += points_earned # Update cumulative total
+    def add_loyalty_points(self, bill_subtotal: Decimal) -> None:
+        """Task 8: Award 1 point per $10 of spend using floor division."""
+        points_earned = int(bill_subtotal // 10)
+        self.loyalty_points += points_earned
         print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
 
-    def toggle_tax_exempt(self):
-        """Task 40: Manual override for specific guest types."""
-        self.is_tax_exempt = not self.is_tax_exempt # Flip Boolean state
+    def toggle_tax_exempt(self) -> None:
+        """Task 40: Manual override for tax-exempt entities."""
+        self.is_tax_exempt = not self.is_tax_exempt
         status = "ENABLED" if self.is_tax_exempt else "DISABLED"
         print(f"Tax Exempt status for {self.full_name}: {status}")
 

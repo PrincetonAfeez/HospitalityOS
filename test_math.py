@@ -1,5 +1,5 @@
 from decimal import Decimal
-from models import MenuItem, Cart, Transaction
+from models import MenuItem, Cart, Modifier, Transaction
 from settings.restaurant_defaults import TAX_RATE
 
 def test_financial_engine():
@@ -25,5 +25,23 @@ def test_financial_engine():
     else:
         print(f"❌ Tip Calculation Failed: Expected 2.00, got {txn.tip}")
 
+def test_modifier_math():
+    # 1. Setup
+    item = MenuItem("Test", "Burger", 10.00, 10, 5, 5, 20)
+    mod = Modifier("Bacon", 2.00)
+    item.add_modifier(mod)
+    
+    cart = Cart()
+    cart.add_to_cart(item)
+    
+    # 2. Assertions
+    expected_subtotal = Decimal("12.00")
+    print(f"Calculated Subtotal: {cart.subtotal}")
+    assert cart.subtotal == expected_subtotal
+    print("✅ Modifier math test passed!")
+
+if __name__ == "__main__":
+    test_modifier_math()
+    
 if __name__ == "__main__":
     test_financial_engine()

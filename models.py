@@ -19,6 +19,14 @@ if TYPE_CHECKING:
 # MENU & MODIFIER MODELS
 # ==============================================================================
 
+class HospitalityError(Exception):
+    """Base exception for HospitalityOS v4.0"""
+    pass
+
+class InsufficientStockError(HospitalityError):
+    """Raised when an item's line inventory is 0 or less."""
+    pass
+
 class Modifier:
     """Represents an add-on item like 'Extra Cheese' or 'Sub Salad'."""
     def __init__(self, name: str, price: float = 0.00):
@@ -95,26 +103,46 @@ class Menu:
                 return item # Return the matching object
         return None # Return None if no match is found
     
+class SecurityLog:
+    """
+    Objective 4: Centralized security audit trail.
+    Tracks high-sensitivity actions like Voids and Discounts.
+    """
+    LOG_FILE = "security.log"
+
+    @staticmethod
+    def log_event(staff_id: str, action: str, details: str) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] STAFF: {staff_id} | ACTION: {action} | DETAILS: {details}\n"
+        
+        # Ensure we use a safe pathing approach later, but for now:
+        with open(SecurityLog.LOG_FILE, "a") as f:
+            f.write(log_entry)
+        print(f"🔒 Security Event Logged: {action}")
+
 # ==============================================================================
 # CART & FINANCIAL MODELS
 # ==============================================================================
 
 class Cart:
-    """A temporary container for items in an active customer order."""
     def __init__(self, guest=None):
-        self.items = [] # List of items in the current order
-        self.guest = guest # Attached Guest object (from digitalfrontdesk)
-        self.tax_rate = Decimal(str(TAX_RATE)) # Decimal tax rate from settings
+        self.items: list[MenuItem] = []
+        self.guest = guest
+        self.tax_rate = Decimal(str(TAX_RATE))
 
-    def add_to_cart(self, item: MenuItem):
-        """Checks '86' status (inventory) and moves item into the active cart."""
-        if item.line_inv > 0: # Check if line stock exists
-            self.items.append(item) # Add to session
-            item.line_inv -= 1 # Deduct from line stock immediately
-            print(f"✅ Added {item.name}. Subtotal: ${self.subtotal:.2f}")
-        else:
-            print(f"⚠️  CANNOT ADD: {item.name} is 86'd!") # UX feedback
-    
+    def add_to_cart(self, item: MenuItem) -> None:
+        """
+        Objective 2: Validate inventory BEFORE adding to cart.
+        Raises InsufficientStockError if item is 86'd.
+        """
+        if item.line_inv <= 0:
+            # The 'Error Bridge': Raise instead of print
+            raise InsufficientStockError(f"Inventory Failure: {item.name} is 86'd and cannot be sold.")
+        
+        self.items.append(item)
+        item.line_inv -= 1
+        print(f"✅ Added {item.name}. Subtotal: ${self.subtotal:.2f}")
+
     def remove_from_cart(self, item_name: str):
         """Removes an item and replenishes the line inventory automatically."""
         for i, item in enumerate(self.items): # Search the cart
@@ -126,13 +154,19 @@ class Cart:
         print(f"❌ '{item_name}' not in cart.") # UX feedback
         return False
 
-    def void_item(self, item_name, reason="Not Specified"):
-        """Task 41: Security requirement - logs voids to a local file."""
+    def void_item(self, item_name: str, staff: Staff, reason: str = "Not Specified") -> bool:
+        """Requirement 41: Logs voids with mandatory staff attribution."""
         for i, item in enumerate(self.items):
             if item.name.lower() == item_name.lower():
                 self.items.pop(i)
-                with open("security.log", "a") as f:
-                    f.write(f"[{datetime.now()}] VOID: {item_name} | Reason: {reason}\n")
+                item.line_inv += 1 # Replenish stock
+                
+                # Use the new SecurityLog class
+                SecurityLog.log_event(
+                    staff_id=staff.staff_id,
+                    action="VOID",
+                    details=f"Item: {item.name} | Reason: {reason}"
+                )
                 return True
         return False
     
