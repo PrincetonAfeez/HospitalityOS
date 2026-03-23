@@ -148,6 +148,13 @@ class MenuEditor:
             item.is_active = not item.is_active
             status = "Active" if item.is_active else "Inactive"
             print(f"🔄 {item_name} is now {status}.")
+    
+    def set_par_level(self, item_name: str, new_par: int):
+        """Commit 34: Update target inventory levels for automated ordering."""
+        item = self.menu.get_item_by_name(item_name)
+        if item:
+            item.par_level = new_par
+            print(f"📦 Par level for {item_name} updated to {new_par} units.")
 
         
 class SecurityLog:
