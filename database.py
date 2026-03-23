@@ -7,6 +7,20 @@ import tempfile
 import shutil
 from datetime import datetime
 
+# Permission Levels: 1=Server, 2=Lead, 3=Manager
+ROLE_PERMISSIONS = {
+    "MANAGER": 3,
+    "LEAD": 2,
+    "SERVER": 1,
+    "BOH": 1
+}
+
+def has_permission(staff: Staff, required_level: int) -> bool:
+    """Commit 28: Role-Based Access Control (RBAC) logic."""
+    # Assume 'dept' or a new 'role' field maps to our permissions
+    user_role = staff.dept.upper() 
+    return ROLE_PERMISSIONS.get(user_role, 0) >= required_level
+
 def atomic_save_json(data, filename):
     """
     Commit 26: Prevents file corruption by writing to a temp file 
@@ -27,7 +41,7 @@ def archive_previous_state(filename="restaurant_state.json"):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         shutil.copy(filename, f"backups/state_backup_{timestamp}.json")
         print(f"📦 Shift archived to backups/state_backup_{timestamp}.json")
-        
+
 def load_menu_from_csv(file_path: str) -> Menu:
     restaurant_menu = Menu()
     try:
