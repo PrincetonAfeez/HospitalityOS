@@ -3,11 +3,11 @@ import re
 import datetime 
 from decimal import Decimal
 from database import load_menu_from_csv, initialize_system_state, save_system_state, validate_staff_login
-from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id
+from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id, get_decimal_input, get_yes_no, sanitize_input
 from storage import save_to_json
 from models import (
-    Cart, ReceiptPrinter, Transaction, Staff, 
-    InventoryManager, Modifier, InsufficientStockError, SecurityLog
+    Cart, ReceiptPrinter, Transaction, Staff, MenuEditor, AnalyticsEngine,
+    InventoryManager, Modifier, InsufficientStockError, SecurityLog, DailyLedger
 )
 
 # ==============================================================================
@@ -76,7 +76,8 @@ def manager_menu(session: AdminSession):
         print("2. Toggle Item Availability")
         print("3. Exit Admin Mode")
         
-        
+        ledger = DailyLedger()
+
         choice = input("Select an option: ")
         if choice == "3": session.is_active = False
         # Logic for 1 and 2 will follow in next commits
@@ -90,6 +91,11 @@ def manager_menu(session: AdminSession):
             name = input("Enter item name to toggle: ")
             session.editor.toggle_item_status(name)
             session.log_action(f"Status Toggle: {name}")
+        if choice == "3":
+            from database import save_system_state
+            # Assuming 'current_menu' and 'sales' are accessible
+            save_system_state(session.editor.menu, ledger.total_revenue)
+            session.is_active = False
 
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
