@@ -133,6 +133,14 @@ class MenuEditor:
             item.price = new_price
             print(f"💰 Price Update: {item_name} changed from ${old_price} to ${new_price}")    
 
+    def apply_category_surge(self, category: str, percentage: Decimal):
+        """Commit 32: Batch price adjustment for an entire category."""
+        target_items = [i for i in self.menu.items if i.category.upper() == category.upper()]
+        for item in target_items:
+            adjustment = (item.price * (percentage / 100)).quantize(Decimal("0.01"))
+            item.price += adjustment
+        print(f"📈 Applied {percentage}% surge to all {category} items.")
+        
         
 class SecurityLog:
     """
