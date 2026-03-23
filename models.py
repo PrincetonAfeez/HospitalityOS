@@ -27,6 +27,10 @@ class InsufficientStockError(HospitalityError):
     """Raised when an item's line inventory is 0 or less."""
     pass
 
+class TableAssignmentError(HospitalityError):
+    """Raised when attempting to seat a guest at an occupied table."""
+    pass
+
 class Modifier:
     """Represents an add-on item like 'Extra Cheese' or 'Sub Salad'."""
     def __init__(self, name: str, price: float = 0.00):
