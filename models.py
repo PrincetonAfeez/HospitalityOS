@@ -67,6 +67,10 @@ class MenuItem:
     
     def add_modifier(self, mod: 'Modifier'):
         """Task 8: Enforces a business limit of 3 modifiers per item."""
+        if mod in self.modifiers:
+            print(f"⚠️ {mod.name} is already applied.")
+            return
+        
         if len(self.modifiers) < 3: # Check current count
             self.modifiers.append(mod) # Add the object
             print(f"✨ Added modifier: {mod.name}") # Visual confirmation
