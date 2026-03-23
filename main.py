@@ -58,6 +58,16 @@ def display_staff_performance(active_server: Staff):
         print("🚩 PERFORMANCE: BELOW TARGET")
     print("="*35)
 
+class AdminSession:
+    """Commit 36: Handles the state of an active administrative session."""
+    def __init__(self, staff: Staff, editor: MenuEditor):
+        self.staff = staff
+        self.editor = editor
+        self.is_active = True
+
+    def log_action(self, action: str):
+        print(f"🔒 [ADMIN LOG] {self.staff.name} performed: {action}")
+        
 # ==============================================================================
 # CORE WORKFLOW FUNCTIONS
 # ==============================================================================
