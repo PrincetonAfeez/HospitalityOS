@@ -6,7 +6,7 @@ from database import load_menu_from_csv, initialize_system_state, save_system_st
 from validator import get_int, get_name, get_yes_no, get_email, get_float, get_staff_id, get_decimal_input,  sanitize_input
 from storage import save_to_json
 from models import (
-    Cart, ReceiptPrinter, Transaction, Staff, MenuEditor, AnalyticsEngine,
+    Cart, ReceiptPrinter, Transaction, Staff, Menu, MenuEditor, AnalyticsEngine,
     InventoryManager, Modifier, InsufficientStockError, SecurityLog, DailyLedger
 )
 
@@ -222,6 +222,12 @@ def print_shift_report(analytics: AnalyticsEngine):
     auditor.export_payroll(f"payroll_{datetime.now().strftime('%Y%m%d')}.csv")
 
 def main():
+    from database import load_menu_from_csv
+    current_menu = load_menu_from_csv("menu.csv")
+    if not current_menu:
+        print("❌ Critical: Menu could not be loaded. Check menu.csv")
+        return
+
     """Primary Controller: Orchestrates the Hospitality OS session."""
     # 1. Boot-up Sequence
     menu = load_menu_from_csv('menu.csv') # Load items from file
@@ -306,11 +312,93 @@ def main():
             
             clear_screen() # Refresh UI for next action
 
+def main_loop():
+    """
+    Commit 47: The primary recursive loop for the POS terminal.
+    Coordinates between Ordering, Auditing, and Administration.
+    """
+    from database import (
+        load_menu_from_csv, 
+        initialize_system_state, 
+        validate_staff_login,
+        save_system_state
+    )
+    from models import DailyLedger, MenuEditor, AdminSession
+    from laborcostauditor import LaborAuditor
+
+    # 1. System Setup
+    menu = load_menu_from_csv("menu.csv")
+    if not menu:
+        print("❌ Critical Error: Menu could not be loaded. Exiting.")
+        return
+
+    # 2. Restore State (Sales & Inventory)
+    initial_sales = initialize_system_state(menu)
+    ledger = DailyLedger(initial_sales)
+    
+    print(f"\n✅ System Ready. Current Sales: ${ledger.total_revenue:.2f}")
+
+    # 3. Primary Interaction Loop
+    while True:
+        print("\n" + "="*30)
+        print(f"{'HOSPITALITY OS v4.0':^30}")
+        print("="*30)
+        print("1. 🛒 New Transaction (Order)")
+        print("2. 📋 Labor Audit (Shift Clock)")
+        print("3. 🔐 Manager Control Panel")
+        print("4. 🚪 Exit & Save State")
+        print("-" * 30)
+
+        choice = input("Select Option: ").strip()
+
+        if choice == "1":
+            # This would call your existing Order/Cart logic
+            # Ensure your Cart updates the 'ledger' and 'menu'
+            print("\n--- Starting New Order ---")
+            # Example: start_order(menu, ledger)
+            pass
+
+        elif choice == "2":
+            # Trigger the Labor Auditor
+            print("\n--- Labor Compliance Module ---")
+            auditor = LaborAuditor(ledger.total_revenue)
+            auditor.sync_with_ledger()
+            # main() logic from laborcostauditor.py can be called here
+            pass
+
+        elif choice == "3":
+            # Admin Mode: Requires Login & Permission Check
+            staff_id = input("Enter Manager ID: ")
+            staff = validate_staff_login(staff_id)
+            
+            if staff and staff.dept.upper() == "MANAGER":
+                editor = MenuEditor(menu)
+                session = AdminSession(staff, editor)
+                # manager_menu logic from Commit 37
+                from main import manager_menu
+                manager_menu(session)
+            else:
+                print("❌ Access Denied: Unauthorized ID.")
+
+        elif choice == "4":
+            # Graceful Shutdown
+            print("\nExiting HospitalityOS...")
+            save_system_state(menu, ledger.total_revenue)
+            print("💾 Shift state saved successfully. Goodbye!")
+            break
+
+        else:
+            print("⚠️ Invalid selection. Please choose 1-4.")
+
+# Entry Point logic from Commit 47
 if __name__ == "__main__":
-    if __name__ == "__main__":
     try:
         main_loop()
+    except KeyboardInterrupt:
+        print("\n\nForced shutdown detected. Attempting emergency save...")
+        # Emergency save logic could go here
     except Exception as e:
-        print(f"☢️ Critical System Failure: {e}")
-        # Emergency Save logic
+        print(f"☢️  CRITICAL SYSTEM FAILURE: {e}")
+
+
     

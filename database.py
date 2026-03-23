@@ -59,7 +59,7 @@ def load_menu_from_csv(file_path: str) -> Menu:
                     freezer=row['freezer_inv'],
                     par=row['par_level']
                 )
-                restaurant_menu.add_item(item)
+                restaurant_menu.add_item(item)                
     except FileNotFoundError:
         print(f"❌ Error: {file_path} not found.")
     except KeyError as e:
