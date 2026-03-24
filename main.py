@@ -10,6 +10,8 @@ import os
 import re
 from datetime import datetime
 from decimal import Decimal
+import atexit
+from database import load_system_state, save_system_state
 
 # Internal Module Imports
 from database import (
@@ -29,6 +31,23 @@ from models import (
     Modifier, InsufficientStockError, DailyLedger, AdminSession
 )
 from storage import save_to_json
+
+def register_shutdown_hooks(menu, ledger):
+    """
+    Commit 26: Global Shutdown Hook.
+    Ensures that regardless of how the app exits (except a hard crash),
+    the current state is captured and saved.
+    """
+    def final_save():
+        print("\n💾 Shutdown signal received. Performing final sync...")
+        save_system_state(menu, ledger)
+        print("✅ System state secured. Goodbye!")
+
+    # Register the function to run at the very end of the Python process
+    atexit.register(final_save)
+
+menu, ledger, staff = load_system_state()
+register_shutdown_hooks(menu, ledger)
 
 # ==============================================================================
 # UI & VISUAL UTILITIES
