@@ -5,6 +5,7 @@ Description: This module defines the architectural blueprints for the system.
              logic for inventory, tax, and California-compliant labor tracking.
 """
 import os
+import csv
 import re  # Used for regex validation in various methods (e.g., validating manager IDs for comps)
 import uuid # Standard library for generating unique, non-sequential transaction IDs
 import json # Used for serializing objects into the 'Shared Brain' JSON state
@@ -1109,3 +1110,31 @@ def generate_low_stock_report(menu_items):
             f.write(f"{alert}\n")
     
     return len(low_stock_alerts)
+
+def record_shift_log(staff_id, action, total_pay=0):
+    """
+    Commit 50: Phase 2 - Item 9.
+    Uses csv.DictWriter to ensure structured labor reporting.
+    """
+    # Standardize path (Phase 1 strategy)
+    log_path = os.path.join(os.path.dirname(__file__), "shift_log.csv")
+    
+    # Define the columns for our spreadsheet
+    fieldnames = ['timestamp', 'staff_id', 'action', 'shift_pay']
+    
+    file_exists = os.path.isfile(log_path)
+    
+    with open(log_path, 'a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        
+        # Create the header only if the file is brand new
+        if not file_exists:
+            writer.writeheader()
+            
+        writer.writerow({
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'staff_id': staff_id,
+            'action': action,
+            'shift_pay': f"{total_pay:.2f}"
+        })
+    print(f"📋 Shift log updated for Staff: {staff_id}")

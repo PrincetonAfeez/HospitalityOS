@@ -297,13 +297,23 @@ def main_loop():
     
     report_count = generate_low_stock_report(my_menu.menu_items) 
     print(f"Report generated: {report_count} items low.")
-    
+
     if items_to_order > 0:
         print(f"⚠️ {items_to_order} items are low! Check shopping_list.txt.")
     else:
         print("✅ Inventory levels are healthy.")
 
-
+# Inside your logout or exit logic
+def handle_staff_logout(staff_member):
+    # Calculate pay based on the session (Phase 1 logic)
+    pay_amount = staff_member.calculate_shift_pay() 
+    
+    # COMMIT 50: Record the structured log
+    from models import record_shift_log
+    record_shift_log(staff_member.staff_id, "CLOCK_OUT", pay_amount)
+    
+    print(f"Shift closed. Total earned: ${pay_amount:.2f}")
+    
 if __name__ == "__main__":
     try:
         main_loop()
