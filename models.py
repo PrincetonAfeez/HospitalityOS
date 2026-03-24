@@ -246,6 +246,34 @@ class Staff(Person):
 # CART & TRANSACTION MODELS
 # ==============================================================================
 
+class Ledger:
+    """
+    Commit 17: The Financial Authority.
+    Tracks all revenue and transaction history for the session.
+    """
+    def __init__(self, initial_revenue: Decimal = Decimal("0.00"), initial_count: int = 0):
+        self.total_revenue = initial_revenue
+        self.transaction_count = initial_count
+        self.history = [] # Optional: to store individual transaction IDs
+
+    def record_transaction(self, amount: Decimal):
+        """
+        Commit 17: Updates the ledger with a new sale.
+        """
+        if amount > 0:
+            self.total_revenue += amount
+            self.transaction_count += 1
+            return True
+        return False
+
+    def get_report(self):
+        """Returns a snapshot of current earnings."""
+        return {
+            "total_revenue": float(self.total_revenue),
+            "transactions": self.transaction_count,
+            "average_check": float(self.total_revenue / self.transaction_count) if self.transaction_count > 0 else 0
+        }
+    
 class Cart:
     """The temporary holding area for an active table order."""
     def __init__(self, guest=None):
