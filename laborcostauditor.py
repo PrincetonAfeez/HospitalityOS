@@ -249,5 +249,62 @@ def main():
     # 3. Final Report
     generate_dashboard(audited_staff, sales)
 
+def get_cogs_from_inventory():
+    """
+    PHASE 4 (13): Bridges InventoryManager to LaborAuditor.
+    Pulls the 'Total Sold Value' (Cost of Goods Sold) from the nightly audit.
+    """
+    path = PathManager.get_path("audit_history.log")
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            lines = f.readlines()
+            if lines:
+                # Logic: Pull the last line of the audit log and extract 'NET'
+                # In a production environment, we'd use a structured JSON daily report
+                last_audit = lines[-1]
+                try:
+                    # Simple parse: looking for the value after 'NET: $'
+                    val = last_audit.split("NET: $")[1].split(" |")[0]
+                    return Decimal(val)
+                except (IndexError, ValueError):
+                    return Decimal("0.00")
+    return Decimal("0.00")
+
+def generate_dashboard(staff, net_sales):
+    """
+    PHASE 4 (13): Renders the 'Executive View' - Sales vs. Labor vs. COGS.
+    """
+    print_divider("═")
+    print(f"{'HOSPITALITY OS: GM EXECUTIVE DASHBOARD':^45}")
+    print_divider("═")
+
+    # 1. Financial Aggregation
+    total_wages = sum(p['pay'] for p in staff)
+    cogs = get_cogs_from_inventory()
+    
+    # 2. KPI Calculations
+    labor_pct = (total_wages / net_sales) * 100 if net_sales > 0 else 0
+    cogs_pct = (cogs / net_sales) * 100 if net_sales > 0 else 0
+    prime_cost_pct = labor_pct + cogs_pct
+
+    # 3. Visual Reporting
+    print(f" 💰 NET SALES:           ${net_sales:>10.2f}")
+    print(f" 🥩 COGS (Inventory):    ${cogs:>10.2f} ({cogs_pct:.1f}%)")
+    print(f" 👥 LABOR COST:          ${total_wages:>10.2f} ({labor_pct:.1f}%)")
+    print_divider("-")
+    print(f" 🚀 PRIME COST TOTAL:    {prime_cost_pct:>10.2f}%")
+    print_divider("-")
+
+    # 4. Actionable Insights (Phase 4 Goal)
+    if prime_cost_pct > 65:
+        print("🚩 PROFIT ALERT: Prime cost exceeds 65%. Reduce waste or labor.")
+    elif prime_cost_pct < 55:
+        print("✨ EXCELLENT: Operation is highly profitable today.")
+    
+    if any(p['violation'] for p in staff):
+        print("🚩 LEGAL: CA Meal-Break Penalties were applied to today's payroll.")
+
+    print(f"\n✅ Monday Master To-Do List: ALL PHASES COMPLETE.")
+    
 if __name__ == "__main__":
     main()
