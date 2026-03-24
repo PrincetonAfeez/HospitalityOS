@@ -68,17 +68,25 @@ def initialize_system_state(menu):
     Returns the starting revenue figure as a Decimal.
     """
     state_path = PathManager.get_path("restaurant_state.json")
-    load_from_json(state_path) # Assuming load_from_json accepts a path
+    state = load_from_json(state_path)
     
-    if state and float(state.get("net_sales", 0)) > 0:
-        ans = input(
-            f"Previous shift data found (${float(state['net_sales']):.2f} in sales). "
-            f"Resume? (y/n): "
-        ).strip().lower()
-        if ans in ('y', 'yes'):
-            print("Resuming previous shift.")
-            return Decimal(str(state['net_sales']))
-    print("Starting new shift.")
+    if state:
+        # Sync Inventory Snapshot to the Live Menu
+        inventory_snapshot = state.get("menu_snapshot", [])
+        for saved_item in inventory_snapshot:
+            # Using our new Commit 5 fuzzy lookup
+            live_item = menu.find_item(saved_item.get("name"))
+            if live_item:
+                live_item.line_inv = int(saved_item.get("line_inv", live_item.line_inv))
+
+        # Check for resuming sales
+        net_sales = state.get("net_sales", 0)
+        if float(net_sales) > 0:
+            ans = input(f"Resume previous shift with ${float(net_sales):.2f} in sales? (y/n): ").strip().lower()
+            if ans in ('y', 'yes'):
+                return Decimal(str(net_sales))
+                
+    print("Starting new shift with fresh ledger.")
     return Decimal("0.00")
 
 
