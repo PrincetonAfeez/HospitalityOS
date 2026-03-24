@@ -62,6 +62,22 @@ class SecurityLog:
 # GUEST MODEL (Domain: Front Desk)
 # ==============================================================================
 
+class Reservation:
+    """
+    Commit 33: The Reservation Engine.
+    Links a guest to a future time slot.
+    """
+    def __init__(self, guest: Guest, res_date, res_time, table_id=None):
+        self.guest = guest
+        self.res_date = res_date # datetime.date object
+        self.res_time = res_time # datetime.time object
+        self.table_id = table_id # Assigned at booking or arrival
+        self.is_confirmed = True
+
+    def __repr__(self):
+        return f"Res: {self.guest.last_name} | {self.res_date} @ {self.res_time}"
+
+        
 class Guest(Person):
     """
     Requirement 7-8, 40, 42: Guest Identity Logic.
