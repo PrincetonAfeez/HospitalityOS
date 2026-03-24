@@ -138,31 +138,36 @@ class MenuItem:
 
 class Menu:
     """
-    Commit 4: Refactor internal storage from List to Dict.
-    Enables O(1) complexity for item lookups.
+    Commit 15: Enhanced Lookup Logic.
+    Distinguishes between missing items and 86'd (inactive) items.
     """
     def __init__(self):
-        # Changed from List to Dict for performance
         self.items = {} 
 
     def add_item(self, item: MenuItem):
-        """Stores item using a normalized lowercase key."""
-        # Normalize the name for the dictionary key
         clean_name = item.name.strip().lower()
         self.items[clean_name] = item
 
-    def find_item(self, name: str) -> Optional[MenuItem]:
-        """Performs a normalized lookup to handle whitespace and casing."""
+    def find_item(self, name: str, include_inactive: bool = False) -> Optional[MenuItem]:
+        """
+        Commit 15: Flexible lookup. By default, hides 86'd items
+        unless include_inactive is set to True (for Admin/Chef views).
+        """
         if not name:
             return None
             
-        # Normalize the user input to match our stored keys
         target = name.strip().lower()
         item = self.items.get(target)
         
-        if item and not item.is_active:
-            return None
-        return item
+        if item:
+            if not item.is_active and not include_inactive:
+                return None # Still hides from Guest/Server by default
+            return item
+        return None
+
+    def get_active_menu(self) -> List[MenuItem]:
+        """Commit 15: Helper to return only items currently for sale."""
+        return [i for i in self.items.values() if i.is_active]
 
 # ==============================================================================
 # LABOR & STAFF MODELS
