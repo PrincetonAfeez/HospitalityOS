@@ -1,29 +1,22 @@
 """
 HospitalityOS v4.0 - System Launcher & Bootloader
-Architect: Princeton Afeez
-Description: The master entry point. Performs a pre-flight hardware/software 
-             check and renders the professional startup UI.
+-------------------------------------------------
+Splash screen, folder preflight, then hands off to main.system_bootstrap().
+Run from the project root so imports like `import main` resolve.
 """
 
 import os
 import time
-import sys
 from datetime import datetime
 
-from HospitalityOS.hospitality_models import WaitlistManager
+from utils import configure_logging, try_configure_utf8_stdout
 
-# In your main boot sequence or launcher
-waitlist = WaitlistManager()
 
-def render_splash():
-    """
-    Renders the ASCII Art logo and system versioning. 
-    Provides a professional UX for the staff upon opening the terminal.
-    """
-    os.system('cls' if os.name == 'nt' else 'clear') # Start with a clean slate
-    
-    # ASCII Art Logo: Designed for a standard 80-character terminal width
-    print(r"""
+def render_splash() -> None:
+    """Print ASCII banner + boot timestamp for front-of-house polish."""
+    os.system("cls" if os.name == "nt" else "clear")
+    print(
+        r"""
     __  ______  __________  __________  __________    _________  __ 
    / / / / __ \/ ___/ __ \/  _/_  __/ /_  __/ __ \  / ___/ __ \/ / 
   / /_/ / / / /\__ \/ /_/ // /  / /     / / / / / /  \__ \/ / / / /  
@@ -32,31 +25,27 @@ def render_splash():
                                                                      
     >> RESTAURANT OPERATING SYSTEM [V4.0.26]
     >> ARCHITECT: PRINCETON AFEEZ
-    """)
+    """
+    )
     print("═" * 65)
-    # Dynamic timestamping for the boot log
     print(f" SYSTEM BOOT: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("═" * 65)
 
-def pre_flight_check():
-    """
-    Verifies that the "Shared Brain" environment is intact.
-    Checks for required directories and critical Python modules.
-    """
-    required_folders = ['data', 'data/logs', 'settings'] # Base architecture
-    required_modules = ['models.py', 'hospitality_models.py', 'main.py'] # Core logic
-    
-    print("🔍 Initializing Pre-Flight Check...")
-    time.sleep(0.5) # Slight pause for visual UX feedback
 
-    # 1. Check Directory Structure
+def pre_flight_check() -> bool:
+    """Verify critical folders and module files exist beside this script."""
+    required_folders = ["data", "data/logs", "settings"]
+    required_modules = ["models.py", "hospitality_models.py", "main.py"]
+
+    print("🔍 Initializing Pre-Flight Check...")
+    time.sleep(0.5)
+
     for folder in required_folders:
         if not os.path.exists(folder):
             print(f" ⚠️  ERROR: Missing directory /{folder}")
             return False
         print(f" ✅ Directory /{folder} ... OK")
 
-    # 2. Check Logic Modules
     for module in required_modules:
         if not os.path.isfile(module):
             print(f" ⚠️  ERROR: Missing core module: {module}")
@@ -64,42 +53,32 @@ def pre_flight_check():
         print(f" ✅ Module {module:<22} ... OK")
 
     print("\n🚀 All Systems Nominal. Engaging POS Interface...")
-    time.sleep(1) # Allow user to see the success state
+    time.sleep(1)
     return True
 
-def start_pos():
-    """
-    Executes the main.py script. This hand-off ensures that if 
-    the POS crashes, the launcher can potentially log the error.
-    """
+
+def start_pos() -> None:
+    """Import main lazily so splash + check run before heavy model loading."""
     try:
-        # Import main inside the function to prevent global scope pollution
-        import main
-        # Trigger the bootstrap sequence defined in main.py
-        active_user, live_menu, live_ledger, live_floor = main.system_bootstrap()
-        
+        import main as pos_main
+
+        active_user, menu, ledger, floor = pos_main.system_bootstrap()
         if active_user:
-            # Transfer control to the main operating loop
-            main.main_loop(active_user, live_menu, live_ledger, live_floor)
+            pos_main.main_loop(active_user, menu, ledger, floor)
         else:
             print("\n👋 System Shutdown: No active user session.")
-            
-    except Exception as e:
-        # Emergency Error Catch: Prevents the terminal from closing instantly on crash
-        print(f"\n🛑 CRITICAL SYSTEM FAILURE: {e}")
+    except Exception as exc:
+        print(f"\n🛑 CRITICAL SYSTEM FAILURE: {exc}")
         input("\nPress Enter to view crash logs and exit...")
 
-# ==============================================================================
-# EXECUTION ENTRY POINT
-# ==============================================================================
 
 if __name__ == "__main__":
-    render_splash() # Show the logo
-    
+    configure_logging()
+    try_configure_utf8_stdout()
+    render_splash()
     if pre_flight_check():
-        start_pos() # Launch the POS
+        start_pos()
     else:
-        # Instructions for the user if the environment is broken
         print("\n❌ SYSTEM HALTED: Environment Incomplete.")
         print("💡 TIP: Run 'python setup_os.py' to repair the directory structure.")
         input("\nPress Enter to close...")
