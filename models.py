@@ -148,6 +148,9 @@ class Menu:
 
     def add_item(self, item: MenuItem):
         clean_name = item.name.strip().lower()
+        if clean_name in self.items:
+            print(f"⚠️ Warning: {item.name} already exists. This will overwrite existing data.")
+        
         self.items[clean_name] = item
 
     def find_item(self, name: str, include_inactive: bool = False) -> Optional[MenuItem]:
