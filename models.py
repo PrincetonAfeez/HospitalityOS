@@ -8,7 +8,7 @@ import copy
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Any
-from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import BaseModel, Field, validator, ConfigDict, ValidationError
 
 # Standardized imports from settings
 from settings.restaurant_defaults import (

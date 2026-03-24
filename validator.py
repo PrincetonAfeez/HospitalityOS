@@ -7,6 +7,8 @@ Description: The 'System Firewall.' Acts as a mandatory filter for all
 """
 
 from decimal import Decimal, InvalidOperation # Critical for exact monetary math
+from pydantic import BaseModel, ValidationError # For schema validation in health checks
+from hospitality_models import Guest # To validate guest data structures during health checks
 
 def get_staff_id(prompt):
     """
@@ -105,3 +107,22 @@ def get_verified_high_value(prompt, threshold=100):
         if not get_yes_no(f"  🚩 ALERT: {val} is a high value. Is this correct? (y/n): "):
             return get_verified_high_value(prompt, threshold) # Recursive retry
     return val
+
+def run_system_health_check(data_list, model_class):
+    """
+    Commit 12: Uses Pydantic to verify that saved JSON matches our schemas.
+    """
+    validated_items = []
+    print(f"🔍 Running Health Check on {model_class.__name__}...")
+    
+    for entry in data_list:
+        try:
+            # This line does the heavy lifting: it checks types, lengths, and values
+            obj = model_class(**entry)
+            validated_items.append(obj)
+        except ValidationError as e:
+            print(f"❌ DATA CORRUPTION DETECTED: {e.json()}")
+            # In a real system, you might move corrupt files to a quarantine folder
+            
+    print(f"✅ Cleaned {len(validated_items)} records.")
+    return validated_items
