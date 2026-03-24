@@ -34,7 +34,7 @@ class Validator:
             if user_input.isdigit():
                 return int(user_input)
             print("❌ Invalid entry. Please enter a whole number.")
-            
+
 def sanitize_input(func):
     """
     Commit 21: A middleware-style decorator that automatically cleans strings.
@@ -66,16 +66,26 @@ def validate_input_safety(user_input: str):
 
 @sanitize_input
 def get_name(prompt):
-    """Ensures names follow professional standards (No numbers/special symbols)."""
-    # Regex: Starts with letter, allows spaces/hyphens, ends with letter
+    """
+    Commit 24: Professional Name Validator with Security Check.
+    Ensures input is safe and follows naming conventions.
+    """
     name_regex = r"^[A-Za-z][A-Za-z\s\-\']+[A-Za-z]$"
     while True:
-        # .title() ensures 'ever flores' becomes 'Ever Flores' for the DB
-        name = input(prompt).strip().title()
+        user_input = input(prompt).strip()
+        
+        # The Security Firewall (Commit 24 addition)
+        try:
+            validate_input_safety(user_input)
+        except HospitalityError as e:
+            print(f"❌ {e}")
+            continue
+
+        name = user_input.title()
         if re.fullmatch(name_regex, name):
             return name
         print("❌ Invalid Name: Use letters, hyphens, or apostrophes only.")
-
+        
 def get_staff_id(prompt):
     """Commit 23: Enforces the 'EMP-XXX' organizational ID standard."""
     # Pattern: Requires 'EMP-' prefix followed by exactly 2 to 3 digits
