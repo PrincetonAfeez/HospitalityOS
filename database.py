@@ -90,39 +90,26 @@ def initialize_system_state(menu):
     return Decimal("0.00")
 
 
-def save_system_state(menu, revenue):
+def save_system_state(menu, ledger):
     """
-    Writes current revenue to restaurant_state.json and persists live inventory
-    levels back to menu.csv so stock changes survive a restart.
+    Commit 13: Uses PathManager and Atomic Save to persist system state.
+    Captures a snapshot of inventory and total revenue.
     """
-    state = {
-        "net_sales": float(revenue),
-        "menu_snapshot": [item.to_dict() for item in menu.items]
+    state_path = PathManager.get_path("restaurant_state.json")
+    
+    # Create the data payload (The "Snapshot")
+    state_data = {
+        "net_sales": str(ledger.total_revenue),
+        "transaction_count": ledger.transaction_count,
+        "menu_snapshot": [item.to_dict() for item in menu.items.values()],
+        "last_updated": datetime.now().isoformat()
     }
-    save_to_json(state, "restaurant_state.json")
-
-    # Build an index of live inventory by item name for fast lookup
-    inv_index = {item.name: item.line_inv for item in menu.items}
-
-    # Read current CSV, update line_inv for each row, write back
-    try:
-        rows = []
-        fieldnames = None
-        with open("menu.csv", newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
-            for row in reader:
-                name = row.get('name', '').strip()
-                if name in inv_index:
-                    row['line_inv'] = str(inv_index[name])
-                rows.append(row)
-
-        with open("menu.csv", 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
-    except OSError as e:
-        print(f"WARNING: Could not persist inventory to menu.csv: {e}")
+    
+    # Use our Commit 12 Atomic Save
+    if save_to_json(state_data, state_path):
+        print(f"✔️ System state successfully secured to {state_path}")
+    else:
+        print("⚠️ Warning: System state could not be saved.")
 
 
 # ==============================================================================
