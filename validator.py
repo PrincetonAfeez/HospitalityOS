@@ -7,6 +7,34 @@ from models import HospitalityError  # Custom exception for domain-specific erro
 # DECORATORS & SECURITY UTILITIES
 # ==============================================================================
 
+class Validator:
+    """
+    Commit 21: Centralized Input Validation.
+    Prevents ValueErrors and TypeErrors from crashing the UI.
+    """
+    
+    @staticmethod
+    def get_positive_decimal(prompt: str) -> Decimal:
+        """Ensures the user provides a valid, positive monetary value."""
+        while True:
+            try:
+                value = Decimal(input(prompt).strip().replace("$", ""))
+                if value < 0:
+                    print("❌ Value cannot be negative. Try again.")
+                    continue
+                return value
+            except (InvalidOperation, ValueError):
+                print("❌ Invalid amount. Please enter a numeric value (e.g., 12.50).")
+
+    @staticmethod
+    def get_positive_int(prompt: str) -> int:
+        """Ensures the user provides a valid whole number (for stock/inventory)."""
+        while True:
+            user_input = input(prompt).strip()
+            if user_input.isdigit():
+                return int(user_input)
+            print("❌ Invalid entry. Please enter a whole number.")
+            
 def sanitize_input(func):
     """
     Commit 21: A middleware-style decorator that automatically cleans strings.
