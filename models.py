@@ -96,6 +96,28 @@ class MenuItem:
             return True
         return False
 
+    def is_low_stock(self) -> bool:
+        """
+        Commit 14: Returns True if line inventory is 
+        below 25% of the designated Par Level.
+        """
+        if self.par_level <= 0:
+            return False
+        return self.line_inv < (self.par_level * 0.25)
+
+    def get_inventory_status(self) -> str:
+        """
+        Commit 14: Returns a human-readable status 
+        label for the kitchen display.
+        """
+        if self.line_inv <= 0:
+            return "86'D (OUT)"
+        if self.is_low_stock():
+            return "CRITICAL LOW"
+        if self.line_inv < self.par_level:
+            return "UNDER PAR"
+        return "STOCKED"
+
     @property
     def total_inventory(self):
         """Computed property summing all storage locations for a macro view."""
