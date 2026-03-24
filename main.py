@@ -28,7 +28,8 @@ from validator import (
 from models import (
     Cart, ReceiptPrinter, Transaction, Staff, Menu, 
     MenuEditor, AnalyticsEngine, InventoryManager, FloorMap,
-    Modifier, InsufficientStockError, DailyLedger, AdminSession
+    Modifier, InsufficientStockError, DailyLedger, AdminSession, 
+    validate_critical_files
 )
 from storage import save_to_json
 
@@ -69,6 +70,17 @@ def display_header(table_num, cart):
 # ADMINISTRATIVE & ANALYTICS UI
 # ==============================================================================
 
+def start_hospitality_os():
+    # 1. COMMIT 47: The Guard Rail
+    if not validate_critical_files():
+        print("🛑 System cannot start. Exiting...")
+        return # Prevents the app from running in a broken state
+
+    # 2. Proceed with previous Boot Loader (Commit 46)
+    ledger = DailyLedger()
+    my_floor = FloorMap()
+    my_floor.restore_active_sessions()
+    
 # main.py / startup sequence
 def start_hospitality_os():
     # 1. Initialize System Components

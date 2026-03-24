@@ -311,6 +311,28 @@ class Modifier:
         """Converts object to JSON-serializable format for persistence."""
         return {"name": self.name, "price": str(self.price)}
 
+def validate_critical_files():
+    """
+    Commit 47: Phase 1/2 Cleanup.
+    Checks for the existence of required CSV and JSON files.
+    """
+    required_files = ["menu.csv", "restaurant_state.json", "staff_list.csv"]
+    missing_files = []
+
+    for file in required_files:
+        path = os.path.join(os.path.dirname(__file__), file)
+        if not os.path.exists(path):
+            missing_files.append(file)
+    
+    if missing_files:
+        print("\n⚠️  SYSTEM CRITICAL ERROR ⚠️")
+        print(f"The following files are missing: {', '.join(missing_files)}")
+        print("Please restore these files from backup before continuing.")
+        return False
+    
+    print("✅ All system files validated.")
+    return True
+
 class MenuItem:
     """The granular data object for every SKU sold in the restaurant."""
     def __init__(self, name, price, category, walk_in, freezer, par_level=10, line_inv=0, station="Kitchen"):
