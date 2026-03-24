@@ -1,77 +1,62 @@
 """
-HospitalityOS v4.0 - Shared Brain Integration Test
-Description: Verifies that Ledger, Inventory, and Staff snapshots 
-             sync correctly across different system modules.
+Shared-brain integration test — skips if seed data missing (no brittle failure on empty repo).
 """
 
-import os
 import json
+import os
+import unittest
 from decimal import Decimal
+
 from database import load_system_state, save_system_state
-from models import Menu, MenuItem, DailyLedger, Staff, Cart, Transaction
-from utils import PathManager
+from models import Cart, Staff
+from utils import PathManager, RESTAURANT_STATE_NAME
 
-def run_integration_test():
-    print("🧪 Starting Shared Brain Integration Test...")
 
-    # 1. SETUP: Create a clean environment
-    menu, ledger, staff_list = load_system_state()
-    test_item_name = "Classic Burger"
-    
-    if test_item_name not in menu.items:
-        print(f"❌ Test Failed: {test_item_name} not found in menu.csv. Run setup_os.py first.")
-        return
+class TestSharedBrainIntegration(unittest.TestCase):
+    """Uses real data/menu.csv when Classic Burger exists."""
 
-    initial_inv = menu.items[test_item_name].line_inv
-    print(f"📦 Initial Inventory for {test_item_name}: {initial_inv}")
+    def setUp(self) -> None:
+        self.menu_path = PathManager.get_path("menu.csv")
+        if not os.path.isfile(self.menu_path):
+            self.skipTest("data/menu.csv missing — run setup_os.py")
 
-    # 2. MOCK TRANSACTION: Simulate a sale
-    print("\n🛒 Simulating a sale of 2 Burgers...")
-    cart = Cart()
-    burger = menu.items[test_item_name]
-    
-    # Add 2 burgers to cart
-    cart.add_to_cart(burger)
-    cart.add_to_cart(burger)
-    
-    # Create a transaction and record it in the ledger
-    mock_staff = Staff("EMP-01", "Princeton", "Afeez", "Manager", "Manager", Decimal("35.00"))
-    txn = Transaction(cart, table_number=10, staff=mock_staff)
-    ledger.record_sale(cart.subtotal)
-    
-    print(f"💰 New Ledger Total: ${ledger.total_revenue}")
-    print(f"📉 Expected New Inventory: {burger.line_inv}")
+    def test_load_save_roundtrip(self) -> None:
+        menu, ledger, _ = load_system_state()
+        if "Classic Burger" not in menu.items:
+            self.skipTest("Classic Burger not in menu — seed data differs")
 
-    # 3. ATOMIC SAVE: Push state to JSON
-    print("\n💾 Performing Atomic Sync to restaurant_state.json...")
-    save_system_state(menu, ledger.total_revenue, ledger.transaction_count)
+        test_item = "Classic Burger"
+        initial_inv = menu.items[test_item].line_inv
 
-    # 4. REHYDRATION VERIFICATION: Reload from disk
-    print("\n🔄 Rehydrating system from Shared Brain...")
-    new_menu, new_ledger, new_staff = load_system_state()
+        cart = Cart()
+        burger = menu.items[test_item]
+        cart.add_to_cart(burger)
+        cart.add_to_cart(burger)
 
-    # TEST A: Ledger Sync
-    if new_ledger.total_revenue == ledger.total_revenue:
-        print("✅ SUCCESS: Ledger Revenue synced.")
-    else:
-        print(f"❌ FAILURE: Ledger mismatch. Expected {ledger.total_revenue}, got {new_ledger.total_revenue}")
+        mock_staff = Staff(
+            staff_id="EMP-01",
+            first_name="Princeton",
+            last_name="Afeez",
+            dept="Manager",
+            role="Manager",
+            hourly_rate="35.00",
+        )
+        ledger.record_sale(cart.grand_total, tip=Decimal("5.00"))
 
-    # TEST B: Inventory Sync
-    rehydrated_inv = new_menu.items[test_item_name].line_inv
-    if rehydrated_inv == initial_inv - 2:
-        print("✅ SUCCESS: Inventory counts synced.")
-    else:
-        print(f"❌ FAILURE: Inventory mismatch. Expected {initial_inv - 2}, got {rehydrated_inv}")
+        save_system_state(menu, ledger, staff_id=mock_staff.staff_id)
 
-    # TEST C: Staff State (Check if JSON recorded the last active user)
-    state_path = PathManager.get_path("restaurant_state.json")
-    with open(state_path, 'r') as f:
-        raw_json = json.load(f)
-        # Check the 'last_updated' key exists
-        if "last_updated" in raw_json:
-            print(f"✅ SUCCESS: Timestamp recorded ({raw_json['last_updated']})")
+        new_menu, new_ledger, _ = load_system_state()
 
-    print("\n✨ Integration Test Complete. The 'Shared Brain' is healthy.")
+        self.assertEqual(new_ledger.total_revenue, ledger.total_revenue)
+        self.assertEqual(new_ledger.total_tips, ledger.total_tips)
+        self.assertEqual(new_menu.items[test_item].line_inv, initial_inv - 2)
+
+        state_path = PathManager.get_path(RESTAURANT_STATE_NAME)
+        with open(state_path, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        self.assertIn("last_updated", raw)
+        self.assertIn("total_tips", raw)
+
 
 if __name__ == "__main__":
-    run_integration_test()
+    unittest.main()
