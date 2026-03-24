@@ -1,0 +1,7 @@
+# Pinned deps for reproducible installs: pip install -r requirements-lock.txt
+# Generated policy: match pydantic v2 API used in codebase.
+
+pydantic==2.10.6
+pydantic_core==2.27.2
+annotated-types==0.7.0
+typing_extensions==4.12.2
