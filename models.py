@@ -277,17 +277,21 @@ class Ledger:
     
     def print_daily_summary(self):
         """
-        Commit 20: Console-based Manager Report.
+        Commit 25: Standardized Financial Reporting.
+        Uses Validator's currency formatting for a clean UI.
         """
+        # Note: You may need to import format_currency from validator
+        from validator import format_currency 
+        
         print("\n" + "="*30)
         print("   HOSPITALITY OS: SHIFT REPORT   ")
         print("="*30)
-        print(f"Total Revenue:   ${self.total_revenue:>10.2f}")
+        print(f"Total Revenue:   {format_currency(self.total_revenue):>10}")
         print(f"Transactions:    {self.transaction_count:>10}")
         
         if self.transaction_count > 0:
             avg = self.total_revenue / self.transaction_count
-            print(f"Avg. Check:      ${avg:>10.2f}")
+            print(f"Avg. Check:      {format_currency(avg):>10}")
         
         print("="*30 + "\n")
         
