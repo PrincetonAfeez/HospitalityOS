@@ -457,58 +457,47 @@ class Ledger:
 class Cart:
     """The temporary holding area for an active table order."""
     def __init__(self, guest=None):
-        """
-        Commit 16 (Merged): Preserves guest and tax logic 
-        while preparing for atomic stock validation.
-        """
         self.items: List[MenuItem] = [] 
         self.guest = guest 
         self.tax_rate = Decimal(str(TAX_RATE))
-        self.is_finalized = False # Useful for Phase 3 (Payments)
+        self.is_finalized = False 
 
     def add_item(self, item: MenuItem) -> bool:
         """
-        Commit 16: Pre-flight stock check.
-        Only adds if item is active and line_inv > 0.
+        Unified Add Logic: Validates stock, clones for safety, 
+        and deducts inventory immediately.
         """
         if not item.is_active or item.line_inv <= 0:
-            raise InsufficientStockError(f"86 ALERT: ❌ Cannot add {item.name}: Out of Stock.")
-            return False
+            # Raise exception so the UI can catch it and alert the server
+            raise InsufficientStockError(f"86 ALERT: ❌ {item.name} is Out of Stock.")
         
-        self.items.append(item)
+        # 1. Create a private copy so modifications don't affect other tables
+        cloned_item = item.clone() 
+        
+        # 2. Record the sale on the master item
+        item.line_inv -= 1 
+        item.units_sold += 1 
+        
+        # 3. Add the clone to this specific cart
+        self.items.append(cloned_item)
         return True
-       
-        cloned_item = item.clone() # Create a private copy of the MenuItem
-        self.items.append(cloned_item) # Add the copy to the cart
-        item.line_inv -= 1 # Deduct from the master menu inventory
-        item.units_sold += 1 # Track sales volume on the master item for analytics
 
+    def checkout(self, ledger: 'Ledger') -> bool:
+        """Finalizes the transaction and records revenue."""
+        if not self.items:
+            raise HospitalityError("Cannot checkout an empty cart.")
+            
+        final_total = self.grand_total # Uses the property you defined
+        ledger.record_transaction(final_total)
+        
+        self.items = [] 
+        self.is_finalized = True
+        return True
 
     def calculate_total(self) -> Decimal:
         """Updated to use your Decimal tax_rate logic."""
         subtotal = sum(item.price for item in self.items)
         return Decimal(str(subtotal)) * (1 + self.tax_rate)
-
-    def checkout(self, ledger: 'Ledger') -> bool:
-        """
-        Commit 27: Exception-based Checkout.
-        Raises HospitalityError instead of just returning False.
-        """
-        if not self.items:
-            raise HospitalityError("Cannot checkout an empty cart.")
-            
-        final_total = self.calculate_total()
-        ledger.record_transaction(final_total)
-        
-        for item in self.items:
-            if item.line_inv <= 0:
-                 # This shouldn't happen with our Cart check, but it's a double-shield
-                 raise HospitalityError(f"Critical Stock Error: {item.name} is empty.")
-            item.line_inv -= 1
-            item.units_sold += 1
-            
-        self.items = [] 
-        return True
 
     def void_item(self, name: str, staff=None, reason: str = "") -> bool:
         """Removes the first matching item from the cart and logs the action."""

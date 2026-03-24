@@ -12,105 +12,8 @@ from decimal import Decimal # Ensuring financial precision for loyalty calculati
 from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
 from storage import save_to_json  # Guest persistence
-from models import Person, Table, Guest # Now importing both
+from models import Person, Table, Guest, Reservation # Now importing both
 
-# ==============================================================================
-# GUEST MODEL (Domain: Front Desk)
-# ==============================================================================
-
-class Reservation:
-    """
-    Commit 33: The Reservation Engine.
-    Links a guest to a future time slot.
-    """
-    def __init__(self, guest: Guest, res_date, res_time, table_id=None):
-        self.guest = guest
-        self.res_date = res_date # datetime.date object
-        self.res_time = res_time # datetime.time object
-        self.table_id = table_id # Assigned at booking or arrival
-        self.is_confirmed = True
-
-    def __repr__(self):
-        return f"Res: {self.guest.last_name} | {self.res_date} @ {self.res_time}"
-
-        
-class Guest(Person):
-    """
-    Requirement 7-8, 40, 42: Guest Identity Logic.
-    Centralized here to keep the core models.py focused on Staff and Inventory.
-    """
-    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: int, party_size=2, allergies: list[str] = None) -> None:
-        # Initialize the 'Person' base class (Commit 1 logic)
-        super().__init__(first_name, last_name)
-        
-        self.guest_id: str = guest_id 
-        self.phone: int = phone 
-        self.allergies: list[str] = allergies if allergies else [] 
-        self.loyalty_points: int = 0 
-        self.is_tax_exempt: bool = False
-        self.party_size = max(1, int(party_size))
-        self.is_seated = False
-        self.assigned_table = None 
-
-    def to_dict(self):
-        return {
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "phone": self.phone,
-            "party_size": self.party_size,
-            "is_seated": self.is_seated
-        }
-        
-    def add_loyalty_points(self, bill_subtotal: Decimal) -> None:
-        """Task 8: Award 1 point per $10 of spend using floor division."""
-        points_earned = int(bill_subtotal // 10)
-        self.loyalty_points += points_earned
-        print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
-
-    def toggle_tax_exempt(self) -> None:
-        """Task 40: Manual override for tax-exempt entities."""
-        self.is_tax_exempt = not self.is_tax_exempt
-        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
-        print(f"Tax Exempt status for {self.full_name}: {status}")
-
-    def get_discount_multiplier(self, percentage):
-        """Task 42: Math helper to apply percentages (e.g., 20% -> 0.8)."""
-        discount = Decimal(str(percentage)) / 100 # Convert to decimal ratio
-        return (Decimal("1.00") - discount) # Return the remaining multiplier
-
-class Table:
-    """
-    Commit 31: Physical Asset Model.
-    Tracks seating capacity and real-time availability.
-    """
-    def __init__(self, table_id: int, capacity: int):
-        self.table_id = table_id
-        self.capacity = capacity
-        self.status = "Available"  # Available, Occupied, Dirty, Reserved
-        self.current_guest_id = None
-
-    def seat_guest(self, guest_id: str):
-        if self.status == "Available":
-            self.status = "Occupied"
-            self.current_guest_id = guest_id
-            return True
-        return False
-
-    def clear_table(self):
-        """Transition to Dirty after a guest leaves."""
-        self.status = "Dirty"
-        self.current_guest_id = None
-
-    def to_dict(self):
-        return {
-            "table_id": self.table_id,
-            "capacity": self.capacity,
-            "status": self.status,
-            "guest_id": self.current_guest_id
-        }
-    
-    def __repr__(self):
-        return f"Table {self.table_id} ({self.capacity}-top)"
 # ==============================================================================
 # MAIN ENGINE & LOGIC
 # ==============================================================================
@@ -192,6 +95,14 @@ def get_resy_details():
     # Returning the full object plus temporary party counts
     return current_guest, adults, children
 
+def find_best_table(floor_map, party_size):
+    """Finds the smallest available table that fits the party."""
+    candidates = [t for t in floor_map if t.status == "Available" and t.capacity >= party_size]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x.capacity)
+    return candidates[0]
+
 def handle_arrival(guest_obj, adults, children, floor_map): # FIX: Accept floor_map
     """
     Handles physical arrival, table assignment, and hand-off to POS.
@@ -221,6 +132,20 @@ def handle_arrival(guest_obj, adults, children, floor_map): # FIX: Accept floor_
         table_num = random.randint(1, 99)
         print(f"No problem, we have assigned you Table {table_num}.")
 
+    # Commit 34: Smart Table Assignment
+    best_table = find_best_table(floor_map, total_guests)
+    
+    if best_table:
+        table_num = best_table.table_id
+        best_table.seat_guest(guest_obj.guest_id)
+        print(f"✅ Table {table_num} (Capacity: {best_table.capacity}) assigned.")
+    else:
+        print(f"❌ No available tables for a party of {total_guests}.")
+        # To be handled in Commit 35: Waitlist
+        return
+
+    digitalpos.run_pos(table_num, guest_obj)
+    
     print(f"\nEnjoy your meal! Table {table_num} is ready for {total_guests} guests.")
 
     # 4. FINAL INTEGRATION: Launch the POS with the specific Table and Guest data
