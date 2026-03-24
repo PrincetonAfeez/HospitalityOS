@@ -9,7 +9,7 @@ from decimal import Decimal
 from database import load_menu_from_csv, save_system_state, validate_staff_login, initialize_system_state
 from models import (
     Cart, Transaction, Modifier, ReceiptPrinter,
-    InsufficientStockError, DailyLedger
+    InsufficientStockError, DailyLedger, save_guest_feedback
 )
 from validator import get_name, get_int, get_yes_no, get_float, get_staff_id
 from storage import save_to_json
@@ -142,12 +142,6 @@ def run_pos(table_num: int, guest=None):
             print("Table session cancelled. Returning to Front Desk.")
             return False
 
-    if payment_success:
-        print(f"\nThank you, {guest.full_name}!")
-        stars = get_int("How was everything today? (1-5 stars): ", min_val=1, max_val=5)
-        note = input("Any additional comments? ")
-        save_guest_feedback(guest.guest_id, stars, note)
-
 def apply_tax_exemption(cart, manager_staff):
     """
     Commit 40: Manager-only flow to exempt a check from tax.
@@ -175,3 +169,50 @@ def manager_comp_flow(cart, manager):
     reason = input("Enter reason (e.g., 'Kitchen Error', 'Employee Meal'): ")
     
     cart.apply_comp(idx, manager.staff_id, reason)
+
+def process_checkout(table, guest, ledger):
+    """
+    Commit 43: The final financial handshake.
+    Converts the Cart into a permanent Ledger entry.
+    """
+    if payment_success:
+        print(f"\nThank you, {guest.full_name}!")
+        stars = get_int("How was everything today? (1-5 stars): ", min_val=1, max_val=5)
+        note = input("Any additional comments? ")
+        save_guest_feedback(guest.guest_id, stars, note)
+    
+    cart = table.current_cart
+    print(f"\n--- CHECKOUT: Table {table.table_id} ---")
+    print(f"Guest: {guest.full_name}")
+    print(f"Subtotal: ${cart.subtotal:.2f}")
+    print(f"Tax:      ${cart.sales_tax:.2f}")
+    if cart.auto_gratuity > 0:
+        print(f"Auto-Grat: ${cart.auto_gratuity:.2f}")
+    print(f"TOTAL DUE: ${cart.grand_total:.2f}")
+
+    # 1. Select Payment Method
+    method = input("Payment Method (Cash/Card): ").strip().title()
+    
+    # 2. Process Tip (Phase 3 logic)
+    tip_input = input("Enter Tip Amount (e.g., '5.00' or '20%'): ")
+    
+    # 3. Create Immutable Transaction
+    from models import Transaction
+    txn = Transaction(cart, method)
+    txn.apply_tip(tip_input)
+    
+    # 4. Record to Global Ledger
+    ledger.record_transaction(txn.final_total)
+    
+    # 5. Update Guest Loyalty (Phase 3 - Item C)
+    # Award 1 point per $10 spent
+    points_earned = int(txn.final_total // 10)
+    guest.loyalty_points += points_earned
+    
+    # 6. Cleanup Table State
+    table.clear_table() # Sets to 'Dirty' for clear_and_reassign logic
+    
+    print(f"\n✅ Transaction Complete! ID: {txn.transaction_id}")
+    print(f"Loyalty Points Earned: {points_earned} (Total: {guest.loyalty_points})")
+    
+    return txn

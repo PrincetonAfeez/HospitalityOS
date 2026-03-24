@@ -691,19 +691,25 @@ class Cart:
     
 class Transaction:
     """The immutable historical record of a completed sale."""
-    def __init__(self, cart: Cart, table_num: int, staff: Staff):
+    def __init__(self, cart: Cart, table_num: int, staff: Staff, payment_method):
         self.txn_id = str(uuid.uuid4())[:8].upper() # Human-friendly short ID
         self.cart = cart # Associated cart data
         self.table_num = table_num # Source table location
         self.staff = staff # Attributed employee
         self.tip = Decimal("0.00") # Initialized tip
         self.timestamp = datetime.now() # Capture moment of sale
-
+        self.transaction_id = str(uuid.uuid4())[:8].upper()
+        self.payment_method = payment_method
+        
     def apply_tip(self, amount_str: str) -> bool:
-        """Parses tip input. Returns True on success, False if format is invalid."""
+        """
+        Commit 43: Using your robust parsing logic.
+        Parses tip input. Returns True on success, False if format is invalid.
+        """
         try:
-            is_percent = "%" in amount_str  # Check BEFORE stripping symbols
+            is_percent = "%" in amount_str
             clean = amount_str.replace("$", "").replace("%", "").strip()
+        
             if is_percent:
                 self.tip = (self.cart.subtotal * (Decimal(clean) / 100)).quantize(Decimal("0.01"))
             else:
@@ -711,6 +717,11 @@ class Transaction:
             return True
         except (ValueError, InvalidOperation):
             return False
+
+    @property
+    def final_total(self):
+        """Calculates the ultimate sum of the cart plus the validated tip."""
+        return self.cart.grand_total + self.tip
 
     def to_dict(self):
         """Serializes the entire transaction including financials for the JSON log."""
