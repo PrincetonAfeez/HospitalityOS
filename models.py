@@ -78,12 +78,13 @@ class MenuItem:
     """The granular data object for every SKU sold in the restaurant."""
     def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
         self.category = category # Category for sales reporting (e.g., 'Liquor')
-        self.name = name # The display name for the POS
-        self.price = Decimal(str(price)) # Base retail cost
-        self.line_inv = int(line_inv) # Immediate stock available to the chef
+        self.name = name.strip() # The display name for the POS
+        self.price = Decimal(str(price)) if Decimal(str(price)) > 0 else Decimal("0.00")
+        self.category = category # Base retail cost
         self.walk_in_inv = int(walk_in) # Backup stock in refrigeration
         self.freezer_inv = int(freezer) # Long-term storage stock
-        self.par_level = int(par) # The 'Reorder Point' for prep lists
+        self.par_level = max(0, par_level)  # The 'Reorder Point' for prep lists
+        self.line_inv = max(0, line_inv) # Immediate stock available to the chef
         self.modifiers: List[Modifier] = [] # List limited to 3 items per business rules
         self.kitchen_notes = "" # Special prep instructions (e.g., 'Allergy')
         self.is_active = True # Soft-delete flag for seasonal items
