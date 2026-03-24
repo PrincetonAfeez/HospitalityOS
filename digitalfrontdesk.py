@@ -176,7 +176,64 @@ def handle_arrival(guest_obj, adults, children, floor_map):
         else:
             print("Understood. Have a wonderful day!")
 
+def run_shift_close(manager_staff, daily_ledger, floor_map):
+    """
+    Commit 36: Standardized Close-out Procedure.
+    1. Check for open tables.
+    2. Print final stats.
+    3. Archive data.
+    4. Reset Ledger.
+    """
+    print(f"\n{'='*40}")
+    print(f"{'SHIFT CLOSE INITIATED':^40}")
+    print(f"{'='*40}")
 
+    # 1. Validation: Ensure no guests are still seated
+    open_tables = [t for t in floor_map if t.status == "Occupied"]
+    if open_tables:
+        print(f"⚠️  ABORT: Table(s) {', '.join(str(t.table_id) for t in open_tables)} are still occupied!")
+        return False
 
+    # 2. Print Summary for Manager review
+    avg = daily_ledger.total_revenue / daily_ledger.transaction_count if daily_ledger.transaction_count > 0 else 0
+    print(f"Final Revenue:  ${daily_ledger.total_revenue:.2f}")
+    print(f"Total Sales:    {daily_ledger.transaction_count}")
+    print(f"Avg. Check:     ${avg:.2f}")
+
+    # 3. Archive and Reset
+    if get_yes_no("Proceed with Final Z-Report and Archive? (y/n): "):
+        success = daily_ledger.archive_shift_data(manager_staff.staff_id)
+        if success:
+            daily_ledger.reset() # Clears the singleton for tomorrow
+            print("\n✅ Shift closed successfully. Data archived.")
+            return True
+    
+    print("\n❌ Shift close cancelled.")
+    return False
+
+def close_restaurant_shift(manager_staff, ledger, floor_map):
+    """The 'End of Day' procedure."""
+    print("\n--- INITIATING SHIFT CLOSE-OUT ---")
+    
+    # 1. Check for 'Ghost Guests' (Unpaid tables)
+    open_tables = [t for t in floor_map if t.status == "Occupied"]
+    if open_tables:
+        print("🛑 ERROR: Cannot close shift. The following tables are still occupied:")
+        for t in open_tables:
+            print(f"  - Table {t.table_id}")
+        return False
+
+    # 2. Final Archive
+    confirm = input("Confirm Z-Report and Revenue Reset? (y/n): ").lower()
+    if confirm == 'y':
+        if ledger.archive_shift_data(manager_staff.staff_id):
+            ledger.reset() # Using the reset method we built in Commit 30
+            print("✅ Shift data archived. Ledger reset to $0.00.")
+            SecurityLog.log_event(manager_staff.staff_id, "SYSTEM_RESET", "Day ended successfully.")
+            return True
+    
+    print("Shift close aborted.")
+    return False
+    
 if __name__ == "__main__":
     main() # Execute the script

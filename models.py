@@ -133,6 +133,44 @@ class Reservation:
     def __repr__(self):
         return f"Res: {self.guest.last_name} | {self.res_date} @ {self.res_time}"
 
+class WaitlistEntry:
+    """Represents a party waiting for a table."""
+    def __init__(self, guest: 'Guest', party_size: int, quoted_mins: int):
+        self.guest = guest
+        self.party_size = party_size
+        self.arrival_time = datetime.now()
+        self.quoted_wait = quoted_mins
+        self.is_notified = False
+
+    @property
+    def current_wait_time(self) -> int:
+        """Calculates how many minutes the guest has actually been waiting."""
+        delta = datetime.now() - self.arrival_time
+        return int(delta.total_seconds() // 60)
+
+class WaitlistManager:
+    """Handles the queue when the restaurant is at capacity."""
+    def __init__(self):
+        self.queue: List[WaitlistEntry] = []
+
+    def add_to_waitlist(self, guest: 'Guest', party_size: int):
+        # Basic logic: 10 mins per party already waiting
+        estimated_wait = len(self.queue) * 10 
+        entry = WaitlistEntry(guest, party_size, estimated_wait)
+        self.queue.append(entry)
+        print(f"📝 {guest.full_name} added to waitlist. Est. wait: {estimated_wait} mins.")
+        return entry
+
+    def get_next_fit(self, capacity: int) -> Optional[WaitlistEntry]:
+        """Finds the first party in the queue that fits an available table capacity."""
+        for entry in self.queue:
+            if entry.party_size <= capacity:
+                return entry
+        return None
+
+    def remove_guest(self, guest_id: str):
+        self.queue = [e for e in self.queue if e.guest.guest_id != guest_id]
+
 class Table:
     """
     Commit 31: Physical Asset Model.
@@ -594,6 +632,31 @@ class DailyLedger:
         self.total_revenue += amount
         self.transaction_count += 1
 
+    def archive_shift_data(self, staff_id: str) -> bool:
+        """
+        Commit 36: Standard 'Z-Report' logic. 
+        Exports daily revenue to an immutable JSON file before resetting.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        filename = f"z_report_{timestamp}.json"
+        
+        report = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "closed_by": staff_id,
+            "total_revenue": str(self.total_revenue),
+            "total_transactions": self.transaction_count,
+            "average_check": str((self.total_revenue / self.transaction_count).quantize(Decimal("0.01"))) if self.transaction_count > 0 else "0.00"
+        }
+
+        try:
+            with open(filename, "w") as f:
+                json.dump(report, f, indent=4)
+            SecurityLog.log_event(staff_id, "Z_REPORT_GENERATED", f"File: {filename}")
+            return True
+        except Exception as e:
+            print(f"❌ Archive Failed: {e}")
+            return False
+
 class InventoryManager:
     """Commit 7: Update loop to handle dictionary-based menu."""
     def get_prep_list(self):
@@ -703,3 +766,15 @@ class AdminSession:
         entry = f"{datetime.now().strftime('%H:%M:%S')} | {self.staff.full_name} | {action}"
         self._action_log.append(entry)
         SecurityLog.log_event(self.staff.staff_id, "ADMIN_ACTION", action)
+    
+    def view_audit_log(self, lines: int = 20):
+        """Displays the last N lines of the security audit trail."""
+        print(f"\n--- SECURITY AUDIT TRAIL (Last {lines} events) ---")
+        try:
+            with open(SecurityLog.LOG_FILE, "r") as f:
+                content = f.readlines()
+                for line in content[-lines:]:
+                    print(line.strip())
+        except FileNotFoundError:
+            print("No security log found yet.")
+        print("-" * 45)
