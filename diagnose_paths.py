@@ -35,6 +35,12 @@ class PathManager:
             return cls.SETTINGS_DIR / filename
         return cls.BASE_DIR / filename
 
+@classmethod
+def ensure_directories(cls):
+    """Ensures the OS folders exist before the system tries to write to them."""
+    for directory in [cls.DATA_DIR, cls.LOG_DIR, cls.SETTINGS_DIR]:
+        directory.mkdir(parents=True, exist_ok=True)
+
 def run_diagnostic():
     """
     Standardizes the verification of the 'Shared Brain' file system.
