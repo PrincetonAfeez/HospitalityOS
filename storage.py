@@ -38,12 +38,18 @@ def save_to_json(data, filename):
         print(f"❌ Atomic Save Error for {filename}: {e}")
         return False
 
-def load_from_json(filename):
-    """Universal helper to load data from JSON."""
-    if not os.path.exists(filename):
-        return None
+def load_from_json(file_path):
+    """
+    Commit 23: Graceful Error Handling.
+    Prevents crashes if files are missing or contain 'garbage' data.
+    """
     try:
-        with open(filename, "r", encoding="utf-8") as f:
+        if not file_path.exists():
+            return None
+            
+        with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except (json.JSONDecodeError, IOError):
+            
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"⚠️ Storage Error: Could not read {file_path.name}. (Error: {e})")
         return None
