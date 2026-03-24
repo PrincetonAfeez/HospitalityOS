@@ -189,14 +189,17 @@ class Person:
 class Staff(Person):
     """Represents an employee with CA labor-compliant payroll logic."""
     def __init__(self, staff_id, first_name, last_name, dept, role, hourly_rate):
-        super().__init__(first_name, last_name) # Initialize Person attributes
-        self.staff_id = staff_id # Unique employee identifier (e.g., EMP-01)
-        self.dept = dept.upper() # FOH or BOH normalization
-        self.role = role.title() # Job title normalization
-        self._hourly_rate = Decimal("16.00") # Default starting point
-        self.hourly_rate = hourly_rate # Triggers the setter for compliance check
-        self.shift_start: Optional[datetime] = None # Stores clock-in time
-        self.shift_end: Optional[datetime] = None # Stores clock-out time
+        super().__init__(first_name, last_name)
+        self.staff_id = staff_id
+        self.dept = dept.upper()
+        self.role = role.title()
+        self._hourly_rate = Decimal("16.00")
+        self.hourly_rate = hourly_rate # Uses your existing setter logic
+        
+        # State Tracking
+        self.is_clocked_in = False 
+        self.shift_start: Optional[datetime] = None
+        self.shift_end: Optional[datetime] = None
         self.had_break: bool = True  # Set by manager at clock-out; defaults True for safety
 
     @property
@@ -211,11 +214,26 @@ class Staff(Person):
         self._hourly_rate = max(val, MIN_WAGE)  # Enforce floor from settings
 
     def clock_in(self):
-        """Initializes the labor session for productivity tracking."""
-        self.shift_start = datetime.now() # Capture exact current time
+        """Initializes the labor session."""
+        self.is_clocked_in = True
+        self.shift_start = datetime.now()
+        print(f"⏰ {self.first_name} {self.last_name} [ID: {self.staff_id}] clocked in.")
+
+    def to_dict(self):
+        """Enables the 'Shared Brain' to save staff state."""
+        return {
+            "staff_id": self.staff_id,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "dept": self.dept,
+            "role": self.role,
+            "hourly_rate": str(self.hourly_rate),
+            "is_clocked_in": self.is_clocked_in
+        }
 
     def clock_out(self):
         """Finalizes the labor session."""
+        self.is_clocked_in = False
         self.shift_end = datetime.now() # Capture exact current time
 
     def get_total_hours(self) -> Decimal:
@@ -244,6 +262,20 @@ class Staff(Person):
             base_pay += self.hourly_rate
         return base_pay.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
+    @classmethod
+    def from_dict(cls, data):
+        """Reconstructs Staff object from saved JSON data."""
+        staff = cls(
+            data["staff_id"], 
+            data["first_name"], 
+            data["last_name"], 
+            data["dept"], 
+            data["role"], 
+            Decimal(data["hourly_rate"])
+        )
+        staff.is_clocked_in = data.get("is_clocked_in", False)
+        return staff
+    
 # ==============================================================================
 # CART & TRANSACTION MODELS
 # ==============================================================================
