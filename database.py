@@ -7,9 +7,10 @@ import os
 import re
 from decimal import Decimal
 
+# Import the new utility
+from utils import PathManager 
 from models import Menu, MenuItem, Staff
 from storage import load_from_json, save_to_json
-
 
 # ==============================================================================
 # INTEGRITY & STARTUP
@@ -34,15 +35,18 @@ def check_database_integrity():
 
 def load_menu_from_csv(filename):
     """
-    Parses menu.csv into a live Menu object containing MenuItem instances.
-    Expected columns: category, name, unit_price, line_inv, walk_in_inv, freezer_inv, par_level
+    Commit 2: Refactor to use PathManager for OS-agnostic pathing.
     """
+    # Resolve the absolute path using our utility
+    path = PathManager.get_path(filename)
+    
     menu = Menu()
-    with open(filename, newline='', encoding='utf-8') as f:
+    # Open using the resolved 'path' variable
+    with open(path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             if not row.get('name', '').strip():
-                continue  # Skip blank rows
+                continue 
             item = MenuItem(
                 category=row['category'].strip(),
                 name=row['name'].strip(),
@@ -55,7 +59,6 @@ def load_menu_from_csv(filename):
             menu.add_item(item)
     print(f"Menu loaded: {len(menu.items)} items.")
     return menu
-
 
 # ==============================================================================
 # STATE MANAGEMENT
