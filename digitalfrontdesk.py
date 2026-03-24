@@ -121,12 +121,17 @@ def main():
     """
     print("\n--- Part A: Reservation InTake ---\n")
     
-    # STEP 1: Capture the Guest Object and the specific party metadata
-    # We now capture the 'guest_obj' to preserve OOP data through the flow
+    # Define your actual dining room layout
+    floor_map = [
+        Table(101, 2), Table(102, 2), # Deuces
+        Table(201, 4), Table(202, 4), # 4-Tops
+        Table(301, 8)                # Large Party Table
+    ]
+
     guest_obj, adults, kids = get_resy_details()
     
-    # STEP 2: Use the object to process the physical guest arrival
-    handle_arrival(guest_obj, adults, kids)
+    # Pass floor_map to handle_arrival for smart seating
+    handle_arrival(guest_obj, adults, kids, floor_map)
 
 def get_resy_details():
     """
