@@ -88,6 +88,8 @@ class Table:
             "guest_id": self.current_guest_id
         }
     
+    def __repr__(self):
+        return f"Table {self.table_id} ({self.capacity}-top)"
 # ==============================================================================
 # MENU & MODIFIER MODELS
 # ==============================================================================
