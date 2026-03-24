@@ -137,20 +137,30 @@ def display_current_bill(cart):
 
 def process_checkout(cart, table_num, ledger, staff):
     """
-    The 'Money' logic. Generates a permanent transaction and 
-    updates the daily revenue ledger.
+    Refactored checkout logic to include Loyalty rewards and Guest feedback.
     """
     if not cart.items:
         print("⚠️  Cannot checkout an empty table.")
         return False
 
     display_current_bill(cart)
-    
+    guest = cart.guest
+
+    # --- TASK 5: LOYALTY REDEMPTION ---
+    if guest and guest.loyalty_points >= 500:
+        print(f"\n⭐ LOYALTY ALERT: {guest.full_name} has {guest.loyalty_points} points.")
+        if get_yes_no("Redeem 500 points for a $10.00 discount? (y/n): "):
+            # Deduct points; the cart's grand_total property handles the math 
+            # (via the apply_loyalty_discount logic in hospitality_models.py)
+            guest.loyalty_points -= 500
+            print("✅ Discount applied. Recalculating totals...")
+            display_current_bill(cart)
+
     if get_yes_no("\nProceed to Final Payment? (y/n): "):
         # Create the immutable transaction record
-        txn = Transaction(cart, table_num, staff)
+        # Note: Using staff.staff_id as per Pydantic refactor in Commit 2
+        txn = Transaction(cart=cart, table_num=table_num, staff_id=staff.staff_id)
         
-        # Tip processing
         tip_input = input("Enter Tip Amount (e.g. 5.00 or 20%): ")
         txn.apply_tip(tip_input)
         
@@ -160,6 +170,20 @@ def process_checkout(cart, table_num, ledger, staff):
         # 2. Log for security audit
         SecurityLog.log_event(staff.staff_id, "PAYMENT_PROCESSED", 
                              f"Table {table_num} | Total: {format_currency(cart.grand_total + txn.tip)}")
+
+        # --- TASK 1: GUEST FEEDBACK PROMPT ---
+        print("\n" + "═"*45)
+        print(f" THANK YOU, {guest.full_name.upper()}!")
+        if get_yes_no("Would the guest like to leave a quick rating? (y/n): "):
+            rating = get_int("Rate your experience (1-5): ", min_val=1, max_val=5)
+            comment = input("Any comments? (Optional): ").strip()
+            
+            # Use the method added in hospitality_models.py
+            guest.record_feedback(rating, comment)
+            print("🙏 Thank you! Feedback has been saved.")
+        
+        # Award points for this meal (100 base + 1 per $10 spent)
+        guest.add_loyalty_points(cart.grand_total)
         
         print("\n✅ PAYMENT SUCCESSFUL. Receipt archived.")
         return True

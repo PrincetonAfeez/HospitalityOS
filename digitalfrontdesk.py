@@ -9,6 +9,7 @@ import uuid   # Used to generate unique 8-character Guest IDs for CRM tracking
 import digitalpos # Integration with the POS engine to transition guests to a table
 from decimal import Decimal # Ensuring financial precision for loyalty/tax logic
 from datetime import date, datetime
+from typing import List, Optional
 
 # --- INTERNAL MODULE IMPORTS ---
 from validator import (
