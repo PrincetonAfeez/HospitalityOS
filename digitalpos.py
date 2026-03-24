@@ -1,286 +1,167 @@
 """
-HospitalityOS v4.0 - Digital POS Bridge
-Description: Provides the run_pos() entry point called by the Digital Front Desk.
-             Launches a table ordering session with the guest object pre-loaded
-             into the cart for tax exemption and loyalty tracking.
+HospitalityOS v4.0 - Point of Sale (POS) Interface
+Architect: Princeton Afeez
+Description: The primary interface used by servers at the table. 
+             Handles ordering, modifiers, and payment processing.
 """
 
+import os
 from decimal import Decimal
-from database import load_menu_from_csv, save_system_state, validate_staff_login, initialize_system_state
-from models import (
-    Cart, Transaction, Modifier, ReceiptPrinter,
-    InsufficientStockError, DailyLedger, save_guest_feedback
-)
-from validator import get_name, get_int, get_yes_no, get_float, get_staff_id
-from storage import save_to_json
 from datetime import datetime
 
+# --- INTERNAL MODULE IMPORTS ---
+from validator import (
+    get_int, get_name, get_yes_no, format_currency
+)
+from models import (
+    Cart, Transaction, MenuItem, SecurityLog, Modifier
+)
+from settings.restaurant_defaults import MAX_MODS
 
-def _display_header(table_num, cart):
-    """Renders the table status bar."""
-    print("\n" + "█" * 45)
-    print(f"{' HOSPITALITY OS - TABLE ' + str(table_num) :^45}")
-    print("█" * 45)
-    print(f" Items: {len(cart.items):<15} | Subtotal: ${cart.subtotal:>8.2f}")
-    if cart.guest:
-        print(f" Guest: {cart.guest.full_name:<15} | Tax Exempt: {cart.guest.is_tax_exempt}")
-    print("-" * 45)
+# ==============================================================================
+# CORE POS EXECUTION
+# ==============================================================================
 
-
-def run_pos(table_num: int, guest=None):
+def run_pos(table_num, guest_obj, menu_brain, daily_ledger, current_staff):
     """
-    Launches a POS ordering session for a specific table.
-    Called by digitalfrontdesk.py after guest check-in.
-
-    Args:
-        table_num: The table number assigned at the front desk.
-        guest: Optional Guest object to attach to the cart (enables tax
-               exemption and loyalty point tracking).
+    The main loop for an active table session.
+    Connects the Guest, the Staff, and the Menu together.
     """
-    import os
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-    print(f"=== POS SESSION - TABLE {table_num} ===")
-    if guest:
-        print(f"Guest: {guest.full_name} | ID: {guest.guest_id}")
-        if guest.allergies:
-            print(f"*** ALLERGY ALERT: {', '.join(guest.allergies)} ***")
-    print()
-
-    # Load menu and seed ledger from state file if it exists (prevents $0 context when standalone)
-    menu = load_menu_from_csv("menu.csv")
-    initial_sales = initialize_system_state(menu)
-    ledger = DailyLedger(initial_sales)
-
-    # Authenticate the server — max 5 attempts before lockout
-    active_server = None
-    for attempt in range(1, 6):
-        login_id = get_staff_id("Server Staff ID: ")
-        active_server = validate_staff_login(login_id)
-        if active_server:
-            break
-        remaining = 5 - attempt
-        if remaining:
-            print(f"Login failed. {remaining} attempt(s) remaining.")
-        else:
-            print("Too many failed login attempts. Session locked.")
-            return False
-    active_server.clock_in()
-
-    # Create cart pre-linked to the guest for tax/loyalty logic
-    cart = Cart(guest=guest)
-
-    # --- Order Entry Loop ---
+    # 1. Initialize the session-specific Cart
+    # We pass the guest_obj so the cart knows if Auto-Gratuity or Tax-Exempt applies
+    active_cart = Cart(guest=guest_obj)
+    
     while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        _display_header(table_num, cart)
-        print(" [1] Add Item  [2] Remove Item  [3] Checkout  [Q] Cancel Table")
-        action = input("Table Action > ").strip().upper()
+        draw_pos_header(table_num, guest_obj, active_cart)
+        
+        print(" [1] Add Food/Drink")
+        print(" [2] Add Modifier (Sub/Add)")
+        print(" [3] View Bill / Print Prep")
+        print(" [4] Process Payment & Close")
+        print(" [Q] Suspend Session (Save for later)")
+        print("═"*45)
+        
+        choice = input("Select Action > ").strip().upper()
 
-        if action == "1":
-            item_name = get_name("Item name: ")
-            found = menu.find_item(item_name)
-            if found:
-                wants_modifier = get_yes_no(f"Add modifiers to {found.name}? (y/n): ")
-                mod_name = None
-                mod_price = None
-                if wants_modifier:
-                    mod_name = input("Modifier name: ").strip()
-                    mod_price = get_float("Modifier price: $", min_val=0.0)
+        if choice == "1":
+            # Add item logic with integrated inventory deduction
+            item_query = get_name("Enter Item Name: ")
+            master_item = menu_brain.find_item(item_query)
+            
+            if master_item:
                 try:
-                    cart.add_to_cart(found)  # Clone is created here
-                    if wants_modifier:
-                        # Apply modifier to the clone, not the master item
-                        if not cart.items[-1].add_modifier(Modifier(mod_name, mod_price)):
-                            print("Modifier limit reached (max 3).")
-                    print(f"Added: {found.name}")
-                except InsufficientStockError as e:
-                    print(f"STOCK ERROR: {e}")
+                    active_cart.add_to_cart(master_item)
+                    print(f"✅ {master_item.name} added to Table {table_num}.")
+                except Exception as e:
+                    # Catching '86' (Out of Stock) errors from models.py
+                    print(f"❌ ERROR: {e}")
             else:
-                print(f"'{item_name}' not found or unavailable.")
+                print("❓ Item not found in current Menu.")
             input("\nPress Enter...")
 
-        elif action == "2":
-            target = input("Item name to remove: ")
-            cart.void_item(target, staff=active_server, reason="Front Desk Correction")
+        elif choice == "2":
+            # Modifier workflow (e.g., 'Medium Rare' or 'No Onions')
+            apply_modifier_workflow(active_cart)
 
-        elif action == "3":
-            if not cart.items:
-                print("Cannot checkout an empty cart.")
-                input("Press Enter...")
-                continue
+        elif choice == "3":
+            # Visual check of the bill before firing to kitchen
+            display_current_bill(active_cart)
+            input("\nPress Enter to return...")
 
-            # Finalize transaction
-            txn = Transaction(cart, table_num, staff=active_server)
-
-            # Re-prompt until valid tip format
-            while True:
-                tip_str = input(f"Subtotal ${cart.subtotal:.2f} | Enter Tip ($ or %): ")
-                if txn.apply_tip(tip_str):
-                    break
-                print("Invalid format. Try '5.00', '$5', or '20%'.")
-
-            os.system('cls' if os.name == 'nt' else 'clear')
-            ReceiptPrinter.print_bill(txn)
-            
-            # Award loyalty points if guest is present
-            if guest:
-                guest.add_loyalty_points(cart.subtotal)
-
-            # Atomic commit: persist log first, then update ledger
-            if save_to_json(txn.to_dict(), "transaction_log.json"):
-                ledger.record_sale(cart.subtotal)
-                save_system_state(menu, ledger.total_revenue)
-            else:
-                print("WARNING: Transaction log failed to save. Sale not recorded in ledger.")
-
-            active_server.clock_out()
-            input("Payment processed. Press Enter to return to Front Desk...")
-            return True
-
-        elif action == "Q":
-            active_server.clock_out()
-            print("Table session cancelled. Returning to Front Desk.")
+        elif choice == "4":
+            # Finalize the transaction
+            if process_checkout(active_cart, table_num, daily_ledger, current_staff):
+                return True # Signal to main.py that table is now 'Dirty'
+        
+        elif choice == "Q":
+            # Suspend: Saves the cart in memory but doesn't close the table
+            print(f"💾 Session for Table {table_num} suspended.")
             return False
 
-def add_item_to_cart_secure(cart, item_name, menu):
-    """
-    Commit 48: Secure adding logic.
-    Prevents 86'd items from being added to new orders.
-    """
-    # 1. Check if the item is on the 86 list
-    if item_name in menu.get_86_list():
-        print(f"🚫 ERROR: {item_name} is 86'd (Out of Stock)!")
-        return False
+# ==============================================================================
+# WORKFLOW HELPERS
+# ==============================================================================
 
-    # 2. Proceed with adding if stock exists
-    item = menu.get_item_by_name(item_name)
-    if item and item.line_inv > 0:
-        cart.add_item(item)
-        item.line_inv -= 1 # Real-time decrement
-        return True
-    
-    print(f"❌ {item_name} is unavailable on the line.")
-    return False
-    
-def apply_tax_exemption(cart, manager_staff):
-    """
-    Commit 40: Manager-only flow to exempt a check from tax.
-    """
-    if not cart.guest:
-        print("❌ Error: No guest profile linked to this cart.")
+def draw_pos_header(table_num, guest, cart):
+    """Renders the top-level HUD for the server."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print("═"*45)
+    print(f" TABLE: {table_num} | GUEST: {guest.full_name}")
+    print(f" PARTY: {guest.party_size} | TOTAL: {format_currency(cart.grand_total)}")
+    print("═"*45)
+
+def apply_modifier_workflow(cart):
+    """Handles the addition of special instructions to the last item added."""
+    if not cart.items:
+        print("⚠️  Add an item to the cart first!")
         return
 
-    print(f"Current Guest: {cart.guest.full_name}")
-    confirm = input("Verify Tax-Exempt ID and proceed? (y/n): ")
+    # Targeting the most recently added item (the 'active' item)
+    target_item = cart.items[-1]
     
-    if confirm.lower() == 'y':
-        cart.guest.toggle_tax_exempt()
-        print(f"✅ Tax removed. New Total: ${cart.grand_total}")
-    else:
-        print("Action cancelled.")
+    if len(target_item.modifiers) >= MAX_MODS:
+        print(f"⚠️  MAX MODS REACHED: Limit is {MAX_MODS} per item.")
+        return
 
-def manager_comp_flow(cart, manager):
-    """UI for applying discounts/comps."""
-    print("\n--- MANAGER COMP INTERFACE ---")
-    for i, item in enumerate(cart.items):
-        print(f"{i}: {item.name} (${item.price})")
+    mod_name = get_name(f"Modifier for {target_item.name}: ")
+    mod_price = Decimal("0.00")
     
-    idx = int(input("Select item index to COMP: "))
-    reason = input("Enter reason (e.g., 'Kitchen Error', 'Employee Meal'): ")
-    
-    cart.apply_comp(idx, manager.staff_id, reason)
+    # Check if this is a premium modifier (e.g., 'Add Avocado')
+    if get_yes_no("Is there an upcharge for this mod? (y/n): "):
+        mod_price = Decimal(input("Upcharge Amount: "))
 
-def process_checkout(table, guest, ledger, floor_map):
-    """
-    Hospitality OS: Final Checkout Controller.
-    Handles payment, robust tip parsing, loyalty points, and guest feedback.
-    """
-    cart = table.current_cart
-    print(f"\n" + "="*30)
-    print(f"      CHECKOUT: TABLE {table.table_id}      ")
-    print("="*30)
-    print(f"Guest: {guest.full_name}")
-    print(f"Subtotal:      ${cart.subtotal:>10.2f}")
-    print(f"Tax:           ${cart.sales_tax:>10.2f}")
-    
-    if cart.auto_gratuity > 0:
-        print(f"Auto-Grat (18%): ${cart.auto_gratuity:>10.2f}")
-        
-    print(f"TOTAL DUE:     ${cart.grand_total:>10.2f}")
-    print("-" * 30)
+    new_mod = Modifier(mod_name, float(mod_price))
+    target_item.modifiers.append(new_mod)
+    print(f"📝 Added '{mod_name}' to {target_item.name}.")
 
-    # 1. Payment Method Selection
-    method = input("Payment Method (Cash/Card): ").strip().title()
-    
-    # 2. Initialize Transaction Object
-    from models import Transaction
-    txn = Transaction(cart, method)
-    
-    # 3. Robust Tip Loop (Using your custom logic)
-    while True:
-        tip_input = input("Enter Tip (e.g., '5.00' or '20%'): ").strip()
-        if txn.apply_tip(tip_input):
-            break
-        print("❌ Invalid format. Please use '5.00' or '20%'.")
-
-    print(f"Final Total (incl. tip): ${txn.final_total:.2f}")
-
-    # 4. Finalize Financials & Record to Ledger
-    payment_success = False
-    try:
-        ledger.record_transaction(txn.final_total)
-        payment_success = True
-        print(f"\n✅ Payment Processed. Transaction ID: {txn.transaction_id}")
-    except Exception as e:
-        print(f"❌ Critical Error recording transaction: {e}")
-
-    # 5. The Feedback Loop (Commit 42 / Phase 3 - Item B)
-    if payment_success:
-        # Loyalty Points: 1 point per $10 spent (Phase 3 - Item C)
-        points_earned = int(txn.final_total // 10)
-        guest.loyalty_points += points_earned
-        print(f"✨ Loyalty Update: +{points_earned} points (Total: {guest.loyalty_points})")
-
-        print(f"\nThank you for dining with us, {guest.full_name}!")
-        try:
-            stars = int(input("How was your experience today? (1-5 stars): "))
-            if 1 <= stars <= 5:
-                note = input("Any additional comments? ")
-                # Import utility from models.py
-                from models import save_guest_feedback
-                save_guest_feedback(guest.guest_id, stars, note)
+def display_current_bill(cart):
+    """Generates a detailed breakdown of items, taxes, and potential gratuity."""
+    print("\n--- PRE-CHECK REVIEW ---")
+    for item in cart.items:
+        print(f" {item.name:<25} {format_currency(item.price):>10}")
+        for mod in item.modifiers:
+            if mod.price > 0:
+                print(f"  + {mod.name:<23} {format_currency(mod.price):>10}")
             else:
-                print("Rating out of range. Skipping feedback.")
-        except ValueError:
-            print("Invalid input. Skipping feedback.")
-
-    # 6. Table Cleanup
-    table.clear_table() # Sets status to 'Dirty' for the busser
+                print(f"  + {mod.name}")
     
-    # Commit 45: Update persistence after guest leaves
-    from models import save_table_session
-    # Assuming floor_map is available in your global scope or passed in
-    save_table_session(floor_map)  
-
-    return txn
-
-def display_gm_dashboard(ledger, staff_list):
-    """The 'Executive View' terminal dashboard."""
-    report = ledger.generate_gm_report(staff_list)
-    
-    print("\n" + "="*40)
-    print(f"       EXECUTIVE GM DASHBOARD        ")
-    print(f"       Date: {datetime.now().strftime('%Y-%m-%d')} ")
-    print("="*40)
-    print(f"Gross Sales:         ${report['total_sales']:>10.2f}")
-    print(f"Labor Expenses:      ${report['total_labor']:>10.2f}")
-    print(f"Labor Cost %:         {report['labor_percentage']:>10}%")
-    print(f"Total Transactions:   {report['transaction_count']:>10}")
     print("-" * 40)
+    print(f" Subtotal:        {format_currency(cart.subtotal):>10}")
+    print(f" Tax:             {format_currency(cart.sales_tax):>10}")
     
-    if report['labor_percentage'] > 30:
-        print("⚠️ ALERT: Labor is high (>30%). Consider cutting staff.")
-    elif report['total_sales'] > 0:
-        print("✅ Efficiency: Prime Cost within healthy range.")
-    print("="*40)
+    # Auto-Gratuity Display logic
+    if cart.auto_gratuity > 0:
+        print(f" Auto-Grat (18%): {format_currency(cart.auto_gratuity):>10}")
+    
+    print(f" GRAND TOTAL:     {format_currency(cart.grand_total):>10}")
+
+def process_checkout(cart, table_num, ledger, staff):
+    """
+    The 'Money' logic. Generates a permanent transaction and 
+    updates the daily revenue ledger.
+    """
+    if not cart.items:
+        print("⚠️  Cannot checkout an empty table.")
+        return False
+
+    display_current_bill(cart)
+    
+    if get_yes_no("\nProceed to Final Payment? (y/n): "):
+        # Create the immutable transaction record
+        txn = Transaction(cart, table_num, staff)
+        
+        # Tip processing
+        tip_input = input("Enter Tip Amount (e.g. 5.00 or 20%): ")
+        txn.apply_tip(tip_input)
+        
+        # 1. Update the Daily Ledger
+        ledger.record_sale(cart.grand_total)
+        
+        # 2. Log for security audit
+        SecurityLog.log_event(staff.staff_id, "PAYMENT_PROCESSED", 
+                             f"Table {table_num} | Total: {format_currency(cart.grand_total + txn.tip)}")
+        
+        print("\n✅ PAYMENT SUCCESSFUL. Receipt archived.")
+        return True
+    
+    return False
