@@ -12,8 +12,104 @@ from decimal import Decimal # Ensuring financial precision for loyalty calculati
 from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
 from storage import save_to_json  # Guest persistence
-from models import Table, Guest
 
+# ==============================================================================
+# GUEST MODEL (Domain: Front Desk)
+# ==============================================================================
+
+class Reservation:
+    """
+    Commit 33: The Reservation Engine.
+    Links a guest to a future time slot.
+    """
+    def __init__(self, guest: Guest, res_date, res_time, table_id=None):
+        self.guest = guest
+        self.res_date = res_date # datetime.date object
+        self.res_time = res_time # datetime.time object
+        self.table_id = table_id # Assigned at booking or arrival
+        self.is_confirmed = True
+
+    def __repr__(self):
+        return f"Res: {self.guest.last_name} | {self.res_date} @ {self.res_time}"
+
+        
+class Guest(Person):
+    """
+    Requirement 7-8, 40, 42: Guest Identity Logic.
+    Centralized here to keep the core models.py focused on Staff and Inventory.
+    """
+    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: int, party_size=2, allergies: list[str] = None) -> None:
+        # Initialize the 'Person' base class (Commit 1 logic)
+        super().__init__(first_name, last_name)
+        
+        self.guest_id: str = guest_id 
+        self.phone: int = phone 
+        self.allergies: list[str] = allergies if allergies else [] 
+        self.loyalty_points: int = 0 
+        self.is_tax_exempt: bool = False
+        self.party_size = max(1, int(party_size))
+        self.is_seated = False
+        self.assigned_table = None 
+
+    def to_dict(self):
+        return {
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "phone": self.phone,
+            "party_size": self.party_size,
+            "is_seated": self.is_seated
+        }
+        
+    def add_loyalty_points(self, bill_subtotal: Decimal) -> None:
+        """Task 8: Award 1 point per $10 of spend using floor division."""
+        points_earned = int(bill_subtotal // 10)
+        self.loyalty_points += points_earned
+        print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
+
+    def toggle_tax_exempt(self) -> None:
+        """Task 40: Manual override for tax-exempt entities."""
+        self.is_tax_exempt = not self.is_tax_exempt
+        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
+        print(f"Tax Exempt status for {self.full_name}: {status}")
+
+    def get_discount_multiplier(self, percentage):
+        """Task 42: Math helper to apply percentages (e.g., 20% -> 0.8)."""
+        discount = Decimal(str(percentage)) / 100 # Convert to decimal ratio
+        return (Decimal("1.00") - discount) # Return the remaining multiplier
+
+class Table:
+    """
+    Commit 31: Physical Asset Model.
+    Tracks seating capacity and real-time availability.
+    """
+    def __init__(self, table_id: int, capacity: int):
+        self.table_id = table_id
+        self.capacity = capacity
+        self.status = "Available"  # Available, Occupied, Dirty, Reserved
+        self.current_guest_id = None
+
+    def seat_guest(self, guest_id: str):
+        if self.status == "Available":
+            self.status = "Occupied"
+            self.current_guest_id = guest_id
+            return True
+        return False
+
+    def clear_table(self):
+        """Transition to Dirty after a guest leaves."""
+        self.status = "Dirty"
+        self.current_guest_id = None
+
+    def to_dict(self):
+        return {
+            "table_id": self.table_id,
+            "capacity": self.capacity,
+            "status": self.status,
+            "guest_id": self.current_guest_id
+        }
+    
+    def __repr__(self):
+        return f"Table {self.table_id} ({self.capacity}-top)"
 # ==============================================================================
 # MAIN ENGINE & LOGIC
 # ==============================================================================
