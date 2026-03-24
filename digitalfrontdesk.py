@@ -142,7 +142,14 @@ def handle_arrival(guest_obj, adults, children, floor_map):
     if assigned_table:
         # 1. Update the Table Object
         # This calls the method in models.py to set status to 'Occupied'
-        assigned_table.seat_guest(guest_obj.guest_id) 
+        assigned_table.seat_guest(guest_obj.guest_id)
+        
+        # Commit 45: Persistence Trigger
+        # floor_map is your list of Table objects
+        from models import save_table_session
+        save_table_session(floor_map) 
+        
+        print(f"✅ Session persisted to active_tables.json")
         
         # 2. Update the Guest Object
         # Links the Guest to the table for receipt/service tracking
@@ -175,6 +182,7 @@ def handle_arrival(guest_obj, adults, children, floor_map):
             print("We will notify you as soon as a table opens up.")
         else:
             print("Understood. Have a wonderful day!")
+    
 
 def run_shift_close(manager_staff, daily_ledger, floor_map):
     """

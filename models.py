@@ -218,6 +218,25 @@ class Table:
     
     def __repr__(self):
         return f"Table {self.table_id} ({self.capacity}-top)"
+    
+    def save_table_session(self, tables: List['Table']):
+        """
+        Commit 45: Phase 4 - Item 10.
+        Persists the current floor state so seated guests survive a restart.
+        """
+        file_path = os.path.join(os.path.dirname(__file__), "active_tables.json")
+        session_data = []
+        
+        for t in tables:
+            if t.status == "Occupied":
+                session_data.append({
+                    "table_id": t.table_id,
+                    "guest_id": t.current_guest_id,
+                    "status": t.status
+                })
+        
+        with open(file_path, "w") as f:
+            json.dump(session_data, f, indent=4)
 
 # ==============================================================================
 # MENU & MODIFIER MODELS

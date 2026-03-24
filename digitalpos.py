@@ -237,6 +237,13 @@ def process_checkout(table, guest, ledger):
 
     # 6. Table Cleanup
     table.clear_table() # Sets status to 'Dirty' for the busser
+    
+    # Commit 45: Update persistence after guest leaves
+    from models import save_table_session
+    # Assuming floor_map is available in your global scope or passed in
+    save_table_session(all_tables) 
+    
+    return txn
     return txn
 
 def display_gm_dashboard(ledger, staff_list):
