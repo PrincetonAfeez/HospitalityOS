@@ -787,6 +787,32 @@ class DailyLedger:
             print(f"❌ Archive Failed: {e}")
             return False
 
+    def get_labor_costs(self, staff_list: List['Staff']) -> Decimal:
+        """
+        Commit 44: Phase 4 - Item 13.
+        Calculates total labor expense based on hours worked and CA rates.
+        """
+        total_labor = Decimal("0.00")
+        for member in staff_list:
+            # Assuming Staff.calculate_shift_pay() exists from Phase 1
+            total_labor += member.calculate_shift_pay()
+        return total_labor
+
+    def generate_gm_report(self, staff_list: List['Staff']):
+        """Generates the 'Executive View' metrics."""
+        sales = self.total_revenue
+        labor = self.get_labor_costs(staff_list)
+        
+        # Avoid division by zero
+        labor_impact = (labor / sales * 100).quantize(Decimal("0.01")) if sales > 0 else Decimal("0.00")
+        
+        return {
+            "total_sales": sales,
+            "total_labor": labor,
+            "labor_percentage": labor_impact,
+            "transaction_count": self.transaction_count
+        }
+    
 class InventoryManager:
     """Commit 7: Update loop to handle dictionary-based menu."""
     def get_prep_list(self):
