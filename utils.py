@@ -1,67 +1,89 @@
 """
 HospitalityOS v4.0 - Universal Utilities
-Architect: Princeton Afeez
-Description: Centralized path resolution and system-wide helper functions.
-             Ensures the 'Shared Brain' works on Windows, macOS, and Linux.
+Path resolution, logging bootstrap, and UTF-8 console hints for Windows.
 """
 
+import logging
 import os
+import sys
 from pathlib import Path
+
+LOG = logging.getLogger("hospitalityos.utils")
+
+# Standard basenames — use with PathManager.get_path(...) everywhere (no hardcoded paths).
+SECURITY_LOG_NAME = "security.log"
+ACTIVE_TABLES_NAME = "active_tables.json"
+FEEDBACK_JSON_NAME = "feedback.json"
+MANAGER_AUTH_NAME = "manager_auth.json"
+RESTAURANT_STATE_NAME = "restaurant_state.json"
+# Operational CSVs kept under data/logs/ (not inventory/menu exports)
+LOG_CSV_NAMES = frozenset({"shift_log.csv", "morning_order.csv"})
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Idempotent-ish basic logging for POS / launcher processes."""
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
+
+def try_configure_utf8_stdout() -> None:
+    """Reduce UnicodeEncodeError on Windows cp1252 consoles when printing emoji."""
+    stdout = getattr(sys, "stdout", None)
+    if stdout and hasattr(stdout, "reconfigure"):
+        try:
+            stdout.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError) as exc:
+            LOG.debug("stdout reconfigure skipped: %s", exc)
+
 
 class PathManager:
     """
-    Commit 45: Advanced Path Resolver.
-    Uses 'pathlib' for modern, cross-platform compatibility.
+    Resolves data/, data/logs/, and settings/ from the repo root (directory of this file).
     """
-    # 1. Establish the absolute Root of the project
-    # __file__ refers to utils.py; .resolve().parent gets the folder it sits in.
+
     BASE_DIR = Path(__file__).resolve().parent
-    
-    # 2. Define Sub-Directory Map
     DATA_DIR = BASE_DIR / "data"
     LOG_DIR = DATA_DIR / "logs"
     SETTINGS_DIR = BASE_DIR / "settings"
 
     @classmethod
-    def _ensure_dirs(cls):
-        """Internal helper to guarantee the folder tree exists before writing files."""
-        for folder in [cls.DATA_DIR, cls.LOG_DIR, cls.SETTINGS_DIR]:
+    def _ensure_dirs(cls) -> None:
+        for folder in (cls.DATA_DIR, cls.LOG_DIR, cls.SETTINGS_DIR):
             folder.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def get_path(cls, filename: str) -> str:
         """
-        Smart Routing: Automatically determines the correct folder based 
-        on file extension or naming convention.
+        Route by convention: logs, Z-reports, settings-only JSON, CSV/data JSON, scripts.
         """
-        cls._ensure_dirs() # Safety check: create folders if missing
-        
-        # Route 1: Security and Transaction Logs
-        if filename.endswith(".log") or "Z_REPORT" in filename:
-            target = cls.LOG_DIR / filename
-            
-        # Route 2: System Configuration and Defaults
-        elif filename.endswith(".py") and filename != "main.py":
-            target = cls.SETTINGS_DIR / filename
-            
-        # Route 3: Standard CSV/JSON Data (Menu, Staff, State)
+        cls._ensure_dirs()
+        base = os.path.basename(filename)
+
+        if base == MANAGER_AUTH_NAME:
+            target = cls.SETTINGS_DIR / base
+        elif base in LOG_CSV_NAMES:
+            target = cls.LOG_DIR / base
+        elif filename.endswith(".log") or "Z_REPORT" in filename:
+            target = cls.LOG_DIR / base
+        elif base.endswith(".py") and base != "main.py":
+            target = cls.SETTINGS_DIR / base
         elif filename.endswith(".csv") or filename.endswith(".json"):
-            target = cls.DATA_DIR / filename
-            
-        # Route 4: Root Level (scripts)
+            target = cls.DATA_DIR / base
         else:
-            target = cls.BASE_DIR / filename
-            
-        return str(target) # Return as string for compatibility with open()
+            target = cls.BASE_DIR / base
 
-# ==============================================================================
-# UI HELPERS (Cross-Module)
-# ==============================================================================
+        return str(target)
 
-def clear_terminal():
-    """Wipes the screen based on the user's Operating System."""
-    os.system('cls' if os.name == 'nt' else 'clear')
 
-def print_divider(char="═", length=45):
-    """Standardizes UI separators for a consistent 'HospitalityOS' look."""
+def clear_terminal() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def print_divider(char: str = "=", length: int = 45) -> None:
+    """ASCII-friendly divider (default '=') for all consoles."""
     print(char * length)
