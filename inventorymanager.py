@@ -16,7 +16,7 @@ from decimal import Decimal   # Mandatory for currency to prevent floating-point
 
 # --- INTERNAL MODULE IMPORTS ---
 # Ensure these exist in your /utils and /validator directories
-from utils import PathManager, print_divider # Handles OS-agnostic paths and UI styling
+from utils import PathManager, RESTAURANT_STATE_NAME, print_divider
 from validator import get_int                 # Custom input wrapper for type-safety
 
 # =================================================================
@@ -58,10 +58,12 @@ def load_inventory_from_menu():
         sys.exit()  # Exit to prevent the script from running on null data
 
 def save_new_inventory_state(inventory_list):
-    """PHASE 2 FIX: Writes the new physical reality back to the master CSV."""
+    """
+    Writes menu.csv — fieldnames MUST match database.load_system_state DictReader keys
+    (category, name, unit_price, line_inv, walk_in_inv, freezer_inv, par_level) or reloads break.
+    """
     full_path = PathManager.get_path("menu.csv")
-    # Define the exact columns to maintain CSV structure integrity
-    fieldnames = ["name", "unit_price", "line_inv", "walk_in_inv", "freezer_inv", "par_level"]
+    fieldnames = ["category", "name", "unit_price", "line_inv", "walk_in_inv", "freezer_inv", "par_level"]
     
     try:
         with open(full_path, mode="w", newline="", encoding="utf-8") as file:
@@ -77,7 +79,7 @@ def save_new_inventory_state(inventory_list):
 
 def load_sales_data():
     """Pulls current POS snapshots to reconcile 'Expected' vs 'Actual' stock."""
-    filename = PathManager.get_path("restaurant_state.json")
+    filename = PathManager.get_path(RESTAURANT_STATE_NAME)
     
     # Check if POS is still active to prevent data collisions (Phase 4 UX)
     if os.path.exists(PathManager.get_path("active_sessions.json")):
