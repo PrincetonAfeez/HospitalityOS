@@ -115,22 +115,26 @@ class MenuItem:
         }
 
 class Menu:
-    """The primary registry for all MenuItem objects."""
+    """
+    Commit 4: Refactor internal storage from List to Dict.
+    Enables O(1) complexity for item lookups.
+    """
     def __init__(self):
-        self.items: List[MenuItem] = [] # Internal storage list
+        # Changed from List to Dict for performance
+        self.items = {} 
 
     def add_item(self, item: MenuItem):
-        """Appends a new dish to the live menu registry."""
-        self.items.append(item)
+        """Adds a MenuItem to the dictionary using its name as the key."""
+        self.items[item.name] = item
 
     def find_item(self, name: str) -> Optional[MenuItem]:
-        """Case-insensitive search. Returns None for inactive (86'd) items."""
-        for item in self.items:
-            if item.name.lower() == name.lower():
-                if not item.is_active:
-                    return None  # Treat 86'd items as not found
-                return item
-        return None
+        """O(1) dictionary lookup. Returns None if item doesn't exist or is 86'd."""
+        # Use .get() to avoid KeyErrors
+        item = self.items.get(name)
+        
+        if item and not item.is_active:
+            return None  # Treat 86'd items as not found
+        return item
 
 # ==============================================================================
 # LABOR & STAFF MODELS
