@@ -1,0 +1,4 @@
+staff_id,name,dept,hourly_rate
+EMP-01,"""Afeez, Princeton""",Manager,35.00
+EMP-02,"""Doe, Jane""",Server,18.50
+EMP-03,"""Smith, John""",Server,18.50

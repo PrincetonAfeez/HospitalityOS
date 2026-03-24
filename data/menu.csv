@@ -1,0 +1,6 @@
+category,name,unit_price,line_inv,walk_in_inv,freezer_inv,par_level
+Mains,Classic Burger,15.50,20,50,100,15
+Mains,Salmon Pasta,22.00,10,25,0,8
+Drinks,Draft Beer,7.00,40,160,0,20
+Drinks,Margarita,12.00,15,30,0,10
+Sides,Truffle Fries,8.50,30,100,200,25
