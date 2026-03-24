@@ -124,13 +124,40 @@ def handle_arrival(guest_obj: Guest, floor: FloorMap, waitlist: WaitlistManager)
         # Transitions the control to the ordering engine
         if get_yes_no("Launch POS for this table now? (y/n): "):
             digitalpos.run_pos(assigned_table.table_id, guest_obj)
-            
+    
+        # NEW: Trigger persistence so seated guests survive a restart
+        floor.save_floor_state() 
+        print(f"💾 Floor state persisted to active_tables.json")
+
     else:
         # FALLBACK: Join the Waitlist if no tables match
         print(f"❌ SORRY: No tables available for a party of {guest_obj.party_size}.")
         if get_yes_no("Would you like to join the waitlist? (y/n): "):
             waitlist.add_to_wait(guest_obj, guest_obj.party_size)
             print("📝 You will be notified when a table opens.")
+
+def cancel_reservation(guest_id: str, floor: FloorMap, waitlist: WaitlistManager):
+    """
+    Phase 4 (A): Instantly clears a session or waitlist entry.
+    """
+    # 1. Check if they are already seated
+    for table in floor.tables:
+        if table.current_guest_id == guest_id:
+            table.clear_table() # Status becomes 'Dirty'
+            print(f"🧹 Table {table.table_id} cleared. Staff notified for busing.")
+            SecurityLog.log_event("FRONT_DESK", "SESSION_KILLED", f"Guest {guest_id} walked out.")
+            return True
+
+    # 2. Check the Waitlist
+    initial_len = len(waitlist.queue)
+    waitlist.queue = [entry for entry in waitlist.queue if entry.guest.guest_id != guest_id]
+    
+    if len(waitlist.queue) < initial_len:
+        print(f"📝 Guest {guest_id} removed from Waitlist.")
+        return True
+
+    print("⚠️ Error: Guest ID not found in active sessions.")
+    return False
 
 # ==============================================================================
 # KITCHEN & SERVICE UTILITIES
