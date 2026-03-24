@@ -72,7 +72,7 @@ def get_email(prompt):
 # NUMERIC & FINANCIAL VALIDATORS
 # ==============================================================================
 
-def get_int(prompt, min_val=None, max_val=None, allow_zero=False):
+def get_int(prompt, min_val=None, max_val=None, allow_zero=False, exact_len=None):
     """Robust integer collector with range and zero-state protection."""
     while True:
         val_str = input(prompt).strip()
@@ -81,6 +81,9 @@ def get_int(prompt, min_val=None, max_val=None, allow_zero=False):
             continue
         try:
             val = int(val_str)
+            if exact_len is not None and len(val_str) != exact_len:
+                print(f"❌ Error: Must be exactly {exact_len} digits.")
+                continue
             # Check for zero if the business logic requires a positive count
             if val == 0 and not allow_zero:
                 print("❌ Invalid: Value cannot be zero.")
@@ -99,6 +102,19 @@ def get_int(prompt, min_val=None, max_val=None, allow_zero=False):
 def clean_currency(val_str: str) -> str:
     """Commit 22: Strips UI formatting ($ or ,) so math logic receives raw digits."""
     return val_str.replace("$", "").replace(",", "").strip()
+
+def get_decimal_input(prompt):
+    """Collects and validates a decimal/currency input. Strips $ and , formatting."""
+    while True:
+        try:
+            raw = input(prompt).strip()
+            val = Decimal(clean_currency(raw))
+            if val < 0:
+                print("❌ Error: Value cannot be negative.")
+                continue
+            return val
+        except (InvalidOperation, ValueError):
+            print("❌ Format Error: Enter a valid amount (e.g., 12.50).")
 
 def get_float(prompt, min_val=None):
     """Financial input collector that converts all strings to Decimal objects."""
@@ -154,6 +170,31 @@ def get_yes_no(prompt):
         if ans in ['n', 'no']: return False
         print("❌ Please answer 'yes' or 'no'.")
 
+def get_date(prompt):
+    """
+    Flexible date validator. Accepts common formats:
+    'Oct 12', 'Oct 12th', '10/12', '10/12/2026', '2026-10-12'
+    Returns a datetime.date object.
+    """
+    formats = ["%B %d", "%b %d", "%m/%d", "%m/%d/%Y", "%Y-%m-%d"]
+    while True:
+        raw = input(prompt).strip()
+        # Strip ordinal suffixes: 12th -> 12, 3rd -> 3
+        cleaned = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", raw, flags=re.IGNORECASE)
+        parsed = None
+        for fmt in formats:
+            try:
+                parsed = datetime.datetime.strptime(cleaned, fmt)
+                # For formats without a year, default to current year
+                if parsed.year == 1900:
+                    parsed = parsed.replace(year=datetime.date.today().year)
+                break
+            except ValueError:
+                continue
+        if parsed:
+            return parsed.date()
+        print("❌ Format Error: Try 'Oct 12', '10/12', or '2026-10-12'.")
+
 def get_time(prompt, start_hour=None, end_hour=None):
     """Forgiving time validator: accepts '11', '11:15', '11pm', or '11.15'."""
     while True:
@@ -171,9 +212,11 @@ def get_time(prompt, start_hour=None, end_hour=None):
             except ValueError: continue
         
         if parsed_time:
-            # Business hours validation
             if start_hour and parsed_time.hour < start_hour:
                 print(f"❌ Closed: We open at {start_hour}:00.")
+                continue
+            if end_hour and parsed_time.hour >= end_hour:
+                print(f"❌ Closed: We close at {end_hour}:00.")
                 continue
             return parsed_time
         print("❌ Format Error: Try '11am', '11:15', or '23:00'.")

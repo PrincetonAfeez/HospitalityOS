@@ -98,14 +98,19 @@ def handle_item_addition(menu, cart, sync_callback, active_server):
     found_item = menu.find_item(item_name)
     
     if found_item:
-        # Check for modifier logic (Task 7)
-        if get_yes_no(f"Add modifiers to {found_item.name}? (y/n): "):
+        wants_modifier = get_yes_no(f"Add modifiers to {found_item.name}? (y/n): ")
+        mod_name = None
+        mod_price = None
+        if wants_modifier:
             mod_name = input("Modifier (e.g., 'Extra Cheese'): ").strip()
             mod_price = get_float("Mod Price: ", min_val=0.0)
-            found_item.add_modifier(Modifier(mod_name, mod_price))
-        
+
         try:
-            cart.add_to_cart(found_item)
+            cart.add_to_cart(found_item)  # Clone is created here
+            if wants_modifier:
+                # Apply modifier to the clone (cart.items[-1]), not the master item
+                if not cart.items[-1].add_modifier(Modifier(mod_name, mod_price)):
+                    print("Modifier limit reached (max 3).")
             sync_callback(cart) # Update 'Shared Brain'
             print(f"✅ Added {found_item.name}")
         except InsufficientStockError as e:
@@ -120,20 +125,23 @@ def process_checkout(active_server, table_num, cart, menu, ledger):
         return
 
     txn = Transaction(cart, table_num, staff=active_server)
-    
-    # Financial Finalization
-    tip_val = input(f"Subtotal ${cart.subtotal:.2f} | Enter Tip ($ or %): ")
-    txn.apply_tip(tip_val)
-    
+
+    # Re-prompt until a valid tip format is entered
+    while True:
+        tip_val = input(f"Subtotal ${cart.subtotal:.2f} | Enter Tip ($ or %): ")
+        if txn.apply_tip(tip_val):
+            break
+        print("Invalid format. Try '5.00', '$5', or '20%'.")
+
     clear_screen()
     ReceiptPrinter.print_bill(txn)
-    
-    # Commit 46: Log the transaction for historical auditing
-    save_to_json(txn.to_dict(), "transaction_log.json")
-    
-    # Update state
-    ledger.total_revenue += cart.subtotal
-    save_system_state(menu, ledger.total_revenue)
+
+    # Atomic commit: persist log first, then update ledger
+    if save_to_json(txn.to_dict(), "transaction_log.json"):
+        ledger.record_sale(cart.subtotal)
+        save_system_state(menu, ledger.total_revenue)
+    else:
+        print("WARNING: Transaction log failed to save. Sale not recorded in ledger.")
     input("\nPayment Processed. Press Enter for next table...")
 
 # ==============================================================================
@@ -153,16 +161,26 @@ def main_loop():
     initial_sales = initialize_system_state(menu)
     ledger = DailyLedger(initial_sales)
     
-    # Login Guard
+    # Login Guard — max 5 attempts before lockout
     active_server = None
-    while not active_server:
+    for attempt in range(1, 6):
         login_id = get_staff_id("Enter Staff ID to unlock POS: ")
         active_server = validate_staff_login(login_id)
+        if active_server:
+            break
+        remaining = 5 - attempt
+        if remaining:
+            print(f"Login failed. {remaining} attempt(s) remaining.")
+        else:
+            print("Too many failed login attempts. System locked.")
+            return
+    active_server.clock_in()
 
     def sync_state(current_cart):
         """Helper to keep the 'Shared Brain' JSON in sync with the current session."""
         state = {
             "staff_name": active_server.full_name,
+            "staff_id": active_server.staff_id,
             "net_sales": float(ledger.total_revenue),
             "cart_count": len(current_cart.items),
             "timestamp": datetime.now().strftime("%H:%M:%S")
@@ -183,17 +201,21 @@ def main_loop():
 
         if main_choice == "1":
             table_num = get_int("Table Number: ", min_val=1)
-            cart = Cart()
+            cart = Cart()  # Walk-in flow; no guest object by default
             
             while True:
                 clear_screen()
                 display_header(table_num, cart)
                 
-                # Labor Warning (Commit 7)
-                if ledger.total_revenue > 0:
-                    labor_pct = (Decimal("20.00") / ledger.total_revenue) * 100 # Mock calculation
+                # Labor Warning — real-time estimate based on server's elapsed shift
+                if ledger.total_revenue > 0 and active_server.shift_start:
+                    elapsed = Decimal(str(
+                        (datetime.now() - active_server.shift_start).total_seconds() / 3600
+                    ))
+                    estimated_labor = elapsed * active_server.hourly_rate
+                    labor_pct = (estimated_labor / ledger.total_revenue) * 100
                     if labor_pct > 25:
-                        print(f"🚩 LABOR ALERT: {labor_pct:.1f}% of sales.")
+                        print(f"LABOR ALERT: {labor_pct:.1f}% of sales.")
 
                 print(" [1] Add Item  [2] Remove  [3] Checkout  [Q] Back")
                 op = input("Action > ").strip().upper()
@@ -220,6 +242,8 @@ def main_loop():
 
         elif main_choice == "3":
             print("Performing Atomic Shutdown...")
+            active_server.had_break = get_yes_no(f"Did {active_server.full_name} take a meal break? (y/n): ")
+            active_server.clock_out()
             save_system_state(menu, ledger.total_revenue)
             break
 

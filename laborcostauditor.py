@@ -19,7 +19,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 # Custom Packages & Modules
-from HospitalityOS.models import Staff
+from models import Staff
 from validator import get_int, get_float, get_time, get_yes_no
 from settings.restaurant_defaults import OVERTIME_LIMIT, MIN_WAGE
 
@@ -92,9 +92,19 @@ class LaborAuditor:
     def export_payroll(self, filename="payroll_final.csv"):
         with open(filename, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["Employee", "Net Hours", "Total Pay"])
-            # ... loop and write logic ...
-        print(f"✅ Payroll export created: {filename}")
+            writer.writerow(["Employee", "Staff ID", "Dept", "Net Hours", "Hourly Rate", "Total Pay"])
+            for entry in self.audited_shifts:
+                s, sh = entry['staff'], entry['shift']
+                total_pay = s.hourly_rate * sh.net_hours
+                writer.writerow([
+                    s.full_name,
+                    s.staff_id,
+                    s.dept,
+                    f"{sh.net_hours:.2f}",
+                    f"{s.hourly_rate:.2f}",
+                    f"{total_pay:.2f}"
+                ])
+        print(f"Payroll export created: {filename}")
         
     @property
     def labor_percentage(self) -> Decimal:

@@ -1,293 +1,143 @@
-# Project: "The Digital POS System."
-# Focus: Using Packages & Data Persistence
-# New Feature: Decimal module for financial precision
-# New Feature: Initialization logic (New Service Day vs. Current Shift)
-# New Feature: Shared Brain (restaurant_state.json) for Inventory & Sales
+"""
+HospitalityOS v4.0 - Digital POS Bridge
+Description: Provides the run_pos() entry point called by the Digital Front Desk.
+             Launches a table ordering session with the guest object pre-loaded
+             into the cart for tax exemption and loyalty tracking.
+"""
 
-import sys
-import os
-import csv
-import json
-from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP  # Precision money math
+from decimal import Decimal
+from database import load_menu_from_csv, save_system_state, validate_staff_login, initialize_system_state
+from models import (
+    Cart, Transaction, Modifier, ReceiptPrinter,
+    InsufficientStockError, DailyLedger
+)
+from validator import get_name, get_int, get_yes_no, get_float, get_staff_id
+from storage import save_to_json
 
-# Import our specialized validators
-from validator import get_int, get_tip_logic, get_name
-from settings.restaurant_defaults import TAX_RATE
 
-# =================================================================
-# CONFIGURATION & DATA INITIALIZATION
-# =================================================================
-print(f"DEBUG: Python is currently looking in: {os.getcwd()}")
-def load_menu(filename="menu.csv"):
+def _display_header(table_num, cart):
+    """Renders the table status bar."""
+    print("\n" + "█" * 45)
+    print(f"{' HOSPITALITY OS - TABLE ' + str(table_num) :^45}")
+    print("█" * 45)
+    print(f" Items: {len(cart.items):<15} | Subtotal: ${cart.subtotal:>8.2f}")
+    if cart.guest:
+        print(f" Guest: {cart.guest.full_name:<15} | Tax Exempt: {cart.guest.is_tax_exempt}")
+    print("-" * 45)
+
+
+def run_pos(table_num: int, guest=None):
     """
-    Loads the universal menu from a CSV file.
-    Returns a list of dictionaries.
+    Launches a POS ordering session for a specific table.
+    Called by digitalfrontdesk.py after guest check-in.
+
+    Args:
+        table_num: The table number assigned at the front desk.
+        guest: Optional Guest object to attach to the cart (enables tax
+               exemption and loyalty point tracking).
     """
-    #This finds the absolute path to the folder containing THIS script
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    # This joins that folder path with your filename
-    full_path = os.path.join(base_path, filename)
-    temp_menu = []
-    try:
-        with open(full_path, mode="r", newline="", encoding="utf-8") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                # Convert strings from CSV to appropriate types
-                row["unit_price"] = float(row["unit_price"])
-                row["line_inv"] = int(row["line_inv"])
-                row["walk_in_inv"] = int(row["walk_in_inv"])
-                row["freezer_inv"] = int(row["freezer_inv"])
-                row["par_level"] = int(row["par_level"])
-                temp_menu.append(row)
-        return temp_menu
-    except FileNotFoundError:
-        print(f"❌ Error: {filename} not found. System exiting.")
-        sys.exit()
+    import os
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-# Load the CSV data once at the start
-menu = load_menu()
+    print(f"=== POS SESSION - TABLE {table_num} ===")
+    if guest:
+        print(f"Guest: {guest.full_name} | ID: {guest.guest_id}")
+        if guest.allergies:
+            print(f"*** ALLERGY ALERT: {', '.join(guest.allergies)} ***")
+    print()
 
-# Standard tip options to show the user before they pay
-tip_percentages = {"18%": 0.18, "20%": 0.20, "22%": 0.22}
+    # Load menu and seed ledger from state file if it exists (prevents $0 context when standalone)
+    menu = load_menu_from_csv("menu.csv")
+    initial_sales = initialize_system_state(menu)
+    ledger = DailyLedger(initial_sales)
 
-def initialize_state():
-    """
-    Prompt to decide if we start fresh from menu.csv 
-    or continue from restaurant_state.json.
-    """
-    filename = "restaurant_state.json"
-    
-    print("\n" + "="*35)
-    print(f"{'SYSTEM INITIALIZATION':^35}")
-    print("="*35)
-    choice = input("Is this a NEW service day? (yes/no): ").strip().lower()
-
-    if choice == "yes":
-        print("☀️  Starting New Service Day. Loading fresh inventory from menu.csv...")
-        new_state = {
-            "net_sales": 0.0,
-            "inventory": {item["name"]: item["line_inv"] for item in menu}
-        }
-        with open(filename, "w") as f:
-            json.dump(new_state, f, indent=4)
-        return new_state
-    else:
-        try:
-            with open(filename, "r") as f:
-                print("🌙 Continuing Current Shift. Loading existing state...")
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            print("⚠️ No existing state found. Defaulting to fresh start...")
-            return {"net_sales": 0.0, "inventory": {item["name"]: item["line_inv"] for item in menu}}
-
-# =================================================================
-# REFACTORED SUB-COMPONENTS
-# =================================================================
-
-def display_menu():
-    """Handles DISPLAY MENU BY CATEGORY"""
-    print("\n" + "="*35)
-    print(f"{'OFFICIAL RESTAURANT MENU':^35}")
-    print("="*35)
-
-    # Get unique categories in the order they appear
-    categories = []
-    for item in menu:
-        if item["category"] not in categories:
-            categories.append(item["category"])
-            
-    for cat in categories:
-        print(f"\n[{cat.upper()}]")
-        for item in menu:
-            if item["category"] == cat:
-                print(f"  {item['name']:<20} ${item['unit_price']:>6.2f}")
-    
-    print("\n" + "="*35)
-    print("\nInstructions: Type item name to add, 'Remove' to delete, or 'Done' to finish.")
-
-def handle_ordering_loop():
-    """
-    PHASE 1: THE ORDERING LOOP (ADD / REMOVE / DONE)
-    Returns (cart, subtotal)
-    """
-    cart = {}
-    subtotal = 0.0
-    
-    while True:
-        # Get user input and clean it up (remove spaces, capitalize first letter)
-        user_choice = input("\nOrder item: ").strip().title()
-
-        # Exit the loop if the user is finished
-        if user_choice in ["Done", "Checkout"]:
+    # Authenticate the server — max 5 attempts before lockout
+    active_server = None
+    for attempt in range(1, 6):
+        login_id = get_staff_id("Server Staff ID: ")
+        active_server = validate_staff_login(login_id)
+        if active_server:
             break
-        
-        # --- SUB-SECTION: REMOVING ITEMS ---
-        elif user_choice == "Remove":
-            if not cart:
-                print("Your cart is empty! Nothing to remove.")
-                continue
-                
-            item_to_remove = get_name("Which item to remove? (or type 'Cancel'): ")
-            
-            if item_to_remove == "Cancel":
-                continue # Goes back to the main order prompt
-            
-            if item_to_remove in cart:
-                # We need to find the price of the item from the menu list
-                target = next(i for i in menu if i["name"] == item_to_remove)
-                subtotal -= target["unit_price"]
-                cart[item_to_remove] -= 1
-                
-                if cart[item_to_remove] == 0:
-                    del cart[item_to_remove]
-                print(f"-> Removed {item_to_remove}. Subtotal: ${subtotal:.2f}")
-            else:
-                print(f"Error: '{item_to_remove}' is not in your cart.")
-
-        # --- SUB-SECTION: ADDING ITEMS ---
+        remaining = 5 - attempt
+        if remaining:
+            print(f"Login failed. {remaining} attempt(s) remaining.")
         else:
-            # Look for the item in our list of dictionaries
-            selected_item = next((item for item in menu if item["name"] == user_choice), None)
+            print("Too many failed login attempts. Session locked.")
+            return False
+    active_server.clock_in()
 
-            if selected_item:
-                # NEW FEATURE: INVENTORY GUARDRAIL
-                # Check current shelf stock before allowing the addition to cart
-                already_in_cart = cart.get(user_choice, 0)
-                if selected_item["line_inv"] > already_in_cart:
-                    cart[user_choice] = already_in_cart + 1
-                    subtotal += selected_item["unit_price"]
-                    print(f"-> Added {user_choice}. Subtotal: ${subtotal:.2f}")
-                else:
-                    print(f"⚠️  CANNOT ADD: {user_choice} is 86'd (Out of stock on line)!")
+    # Create cart pre-linked to the guest for tax/loyalty logic
+    cart = Cart(guest=guest)
+
+    # --- Order Entry Loop ---
+    while True:
+        os.system('cls' if os.name == 'nt' else 'clear')
+        _display_header(table_num, cart)
+        print(" [1] Add Item  [2] Remove Item  [3] Checkout  [Q] Cancel Table")
+        action = input("Table Action > ").strip().upper()
+
+        if action == "1":
+            item_name = get_name("Item name: ")
+            found = menu.find_item(item_name)
+            if found:
+                wants_modifier = get_yes_no(f"Add modifiers to {found.name}? (y/n): ")
+                mod_name = None
+                mod_price = None
+                if wants_modifier:
+                    mod_name = input("Modifier name: ").strip()
+                    mod_price = get_float("Modifier price: $", min_val=0.0)
+                try:
+                    cart.add_to_cart(found)  # Clone is created here
+                    if wants_modifier:
+                        # Apply modifier to the clone, not the master item
+                        if not cart.items[-1].add_modifier(Modifier(mod_name, mod_price)):
+                            print("Modifier limit reached (max 3).")
+                    print(f"Added: {found.name}")
+                except InsufficientStockError as e:
+                    print(f"STOCK ERROR: {e}")
             else:
-                print(f"Sorry, '{user_choice}' isn't on the menu.")
-    
-    return cart, subtotal
+                print(f"'{item_name}' not found or unavailable.")
+            input("\nPress Enter...")
 
-def process_payment_and_split(subtotal):
-    """
-    PHASE 2 & 3: TIP SELECTION & BILL SPLITTING
-    Returns (tip_amount, people)
-    """
-    # Display suggested tip amounts based on the food subtotal
-    print("\n----- Suggested Tips -----")
-    for label, percent in tip_percentages.items():
-        print(f"{label}: ${subtotal * percent:.2f}")
+        elif action == "2":
+            target = input("Item name to remove: ")
+            cart.void_item(target, staff=active_server, reason="Front Desk Correction")
 
-    # REFACTORED: Now uses our modular 'get_tip_logic' from validator.py
-    tip_amount = get_tip_logic("\nEnter tip (e.g., '10%' or '$10'): ", subtotal)
+        elif action == "3":
+            if not cart.items:
+                print("Cannot checkout an empty cart.")
+                input("Press Enter...")
+                continue
 
-    # REFACTORED: Now uses 'get_int' to ensure we have a valid count of people (min 1)
-    people = get_int("How many people are splitting? ", min_val=1)
-    
-    return tip_amount, people
+            # Finalize transaction
+            txn = Transaction(cart, table_num, staff=active_server)
 
-def print_receipt(table_num, cart, subtotal, tip_amount, people):
-    """PHASE 4: FINAL CALCULATIONS & FORMATTING (PRINT THE RECEIPT)"""
-    # Calculate tax and total
-    sales_tax = subtotal * TAX_RATE
-    total_bill = subtotal + sales_tax + tip_amount
-    per_person = total_bill / people
+            # Re-prompt until valid tip format
+            while True:
+                tip_str = input(f"Subtotal ${cart.subtotal:.2f} | Enter Tip ($ or %): ")
+                if txn.apply_tip(tip_str):
+                    break
+                print("Invalid format. Try '5.00', '$5', or '20%'.")
 
-    print("\n" + "="*35)
-    print(f"{'RESTAURANT BILL':^35}") # ^35 centers text in a 35-character block
-    print(f"{'Table: ' + str(table_num):^35}") 
-    print("="*35)
+            os.system('cls' if os.name == 'nt' else 'clear')
+            ReceiptPrinter.print_bill(txn)
 
-    # Loop through the cart dictionary to print each item, its quantity, and total
-    for name, count in cart.items():
-        # Find the item again to get the price for the receipt
-        target = next(i for i in menu if i["name"] == name)
-        line_total = target["unit_price"] * count
-        print(f"{count}x {name:<20} ${line_total:>8.2f}")
+            # Award loyalty points if guest is present
+            if guest:
+                guest.add_loyalty_points(cart.subtotal)
 
-    print("-" * 35)
-    print(f"Subtotal:            ${subtotal:>8.2f}")
-    print(f"Sales Tax {TAX_RATE}:    ${sales_tax:>8.2f}")
-    print(f"Tip:                 ${tip_amount:>8.2f}")
-    print("-" * 35)
-    print(f"TOTAL BILL:          ${total_bill:>8.2f}")
-    print("-" * 35)
+            # Atomic commit: persist log first, then update ledger
+            if save_to_json(txn.to_dict(), "transaction_log.json"):
+                ledger.record_sale(cart.subtotal)
+                save_system_state(menu, ledger.total_revenue)
+            else:
+                print("WARNING: Transaction log failed to save. Sale not recorded in ledger.")
 
-    # Conditional message: only show splitting info if there's more than one person
-    if people > 1:
-        print(f"Each Person ({people}):      ${per_person:>8.2f}")
-    else:
-        print("Paid in full by 1 person.")
-    print("="*35 + "\n")
+            active_server.clock_out()
+            input("Payment processed. Press Enter to return to Front Desk...")
+            return True
 
-def save_sales_to_history(cart, subtotal):
-    """
-    Challenge 7: The Shared Brain
-    Updates restaurant_state.json with cumulative sales and decrements inventory.
-    Uses Decimal for precision financial math.
-    """
-    filename = "restaurant_state.json"
-    subtotal_dec = Decimal(str(subtotal))
-    
-    try:
-        # 1. READ
-        try:
-            with open(filename, "r") as f:
-                state = json.load(f)
-                state["net_sales"] = Decimal(str(state["net_sales"]))
-        except (FileNotFoundError, json.JSONDecodeError):
-            state = {
-                "net_sales": Decimal("0.00"),
-                "inventory": {item["name"]: item["line_inv"] for item in menu}
-            }
-
-        # 2. UPDATE
-        state["net_sales"] += subtotal_dec
-        for item, qty in cart.items():
-            if item in state["inventory"]:
-                state["inventory"][item] -= qty
-
-        # 3. WRITE (Convert Decimal back to float for JSON compatibility)
-        output_state = state.copy()
-        output_state["net_sales"] = float(state["net_sales"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-
-        with open(filename, "w") as f:
-            json.dump(output_state, f, indent=4)
-        
-        print(f"✅ Shared Brain Updated: ${subtotal:.2f} added to Daily Sales.")
-        print(f"📝 Inventory updated in {filename}")
-
-    except Exception as e:
-        print(f"⚠️ Warning: Could not update Shared Brain: {e}")
-
-# =================================================================
-# MAIN POS ORCHESTRATOR
-# =================================================================
-
-def run_pos(table_num):
-    """
-    Main logic for the Digital POS System. 
-    Accepts a table_num (int or str) passed from the intake script.
-    """
-    print(f"\n--- POS System Active for Table {table_num} ---")
-
-    display_menu()
-    
-    cart, subtotal = handle_ordering_loop()
-
-    # Final safety check: Don't proceed if the user ordered nothing
-    if not cart:
-        print("\nYour cart is empty. Goodbye!")
-        return
-
-    tip_amount, people = process_payment_and_split(subtotal)
-
-    print_receipt(table_num, cart, subtotal, tip_amount, people)
-
-    # NEW FEATURE: SHIFT HANDOFF (PERSISTENCE)
-    save_sales_to_history(cart, subtotal)
-
-# --- MAIN BLOCK ---
-if __name__ == "__main__":
-    # Initialize state at the very start of the script execution
-    initialize_state()
-    
-    test_table = get_int("Enter Test Table Number: ", min_val=1)
-    run_pos(test_table)
+        elif action == "Q":
+            active_server.clock_out()
+            print("Table session cancelled. Returning to Front Desk.")
+            return False

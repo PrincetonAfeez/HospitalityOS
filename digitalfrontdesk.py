@@ -11,6 +11,7 @@ import digitalpos # Integration with the POS engine to transition guests to a ta
 from decimal import Decimal # Ensuring financial precision for loyalty calculations
 from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
+from storage import save_to_json  # Guest persistence
 
 # ==============================================================================
 # GUEST MODEL (Domain: Front Desk)
@@ -102,14 +103,27 @@ def get_resy_details():
 
     # 6. Instantiate the Guest Object
     # Create a unique 4-character hex ID for the database/CRM
-    generated_id = f"GST-{str(uuid.uuid4())[:4].upper()}"
+    generated_id = f"GST-{str(uuid.uuid4())[:8].upper()}"
     current_guest = Guest(generated_id, first_name, last_name, phone, allergies)
 
-    # 7. Confirmation UX
+    # 7. Persist guest record to CRM log
+    guest_record = {
+        "guest_id": current_guest.guest_id,
+        "name": current_guest.full_name,
+        "phone": current_guest.phone,
+        "allergies": current_guest.allergies,
+        "loyalty_points": current_guest.loyalty_points,
+        "is_tax_exempt": current_guest.is_tax_exempt,
+        "reservation_date": str(date),
+        "reservation_time": str(resy_time)
+    }
+    save_to_json(guest_record, "guest_log.json")
+
+    # 8. Confirmation UX
     print(f"\n--- Reservation Confirmed ---")
     print(f"Guest: {current_guest.full_name} | ID: {current_guest.guest_id}")
     print(f"Date: {date} at {resy_time}")
-    
+
     # Returning the full object plus temporary party counts
     return current_guest, adults, children
 
@@ -145,7 +159,9 @@ def handle_arrival(guest_obj, adults, children):
     print(f"\nEnjoy your meal! Table {table_num} is ready for {total_guests} guests.")
 
     # 4. FINAL INTEGRATION: Launch the POS with the specific Table and Guest data
-    digitalpos.run_pos(table_num, guest_obj)
+    success = digitalpos.run_pos(table_num, guest_obj)
+    if success is False:
+        print(f"⚠️  POS session for Table {table_num} ended without completing checkout.")
 
 if __name__ == "__main__":
     main() # Execute the script

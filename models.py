@@ -8,13 +8,15 @@ import uuid # Standard library for generating unique, non-sequential transaction
 import json # Used for serializing objects into the 'Shared Brain' JSON state
 import copy # Essential for deep-copying MenuItems to prevent shared state bugs in carts
 from datetime import datetime # Core utility for timestamping sales and clock-ins
-from decimal import Decimal, ROUND_HALF_UP # Industry standard for financial rounding precision
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Industry standard for financial rounding precision
 
 # Try-Except block to handle missing settings during initial environment setup
 try:
-    from settings.restaurant_defaults import TAX_RATE 
+    from settings.restaurant_defaults import TAX_RATE, MIN_WAGE, MAX_MODS
 except ImportError:
-    TAX_RATE = 0.08  # Default fallback if the settings file is not yet created
+    TAX_RATE = Decimal("0.095")
+    MIN_WAGE = Decimal("18.00")
+    MAX_MODS = 3
 
 # Type Hinting: Prevents circular imports while allowing IDE autocompletion
 from typing import TYPE_CHECKING, List, Optional
@@ -47,9 +49,12 @@ class SecurityLog:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") # Human-readable time
         log_entry = f"[{timestamp}] STAFF: {staff_id} | ACTION: {action} | DETAILS: {details}\n"
         
-        with open(SecurityLog.LOG_FILE, "a") as f: # Append mode to preserve history
-            f.write(log_entry) # Commit to disk
-        print(f"🔒 Security Event Logged: {action}") # Real-time console feedback
+        try:
+            with open(SecurityLog.LOG_FILE, "a") as f: # Append mode to preserve history
+                f.write(log_entry) # Commit to disk
+        except OSError as e:
+            print(f"[SECURITY WARNING] Audit trail could not be written: {e}")
+        print(f"[SECURITY] Event Logged: {action}") # Real-time console feedback
 
 # ==============================================================================
 # MENU & MODIFIER MODELS
@@ -82,13 +87,14 @@ class MenuItem:
         self.modifiers: List[Modifier] = [] # List limited to 3 items per business rules
         self.kitchen_notes = "" # Special prep instructions (e.g., 'Allergy')
         self.is_active = True # Soft-delete flag for seasonal items
+        self.units_sold: int = 0 # Tracks actual sales volume for analytics
 
     def add_modifier(self, mod: Modifier):
-        """Enforces the 'Rule of Three' to prevent order complexity and over-charging."""
-        if len(self.modifiers) < 3:
-            self.modifiers.append(mod) # Append the object to the list
+        """Enforces the modifier cap (MAX_MODS from settings) to limit order complexity."""
+        if len(self.modifiers) < MAX_MODS:
+            self.modifiers.append(mod)
             return True
-        return False # Signal failure if limit reached
+        return False
 
     @property
     def total_inventory(self):
@@ -118,10 +124,12 @@ class Menu:
         self.items.append(item)
 
     def find_item(self, name: str) -> Optional[MenuItem]:
-        """Case-insensitive search utility for the POS search bar."""
+        """Case-insensitive search. Returns None for inactive (86'd) items."""
         for item in self.items:
             if item.name.lower() == name.lower():
-                return item # Return reference to the actual object
+                if not item.is_active:
+                    return None  # Treat 86'd items as not found
+                return item
         return None
 
 # ==============================================================================
@@ -150,6 +158,7 @@ class Staff(Person):
         self.hourly_rate = hourly_rate # Triggers the setter for compliance check
         self.shift_start: Optional[datetime] = None # Stores clock-in time
         self.shift_end: Optional[datetime] = None # Stores clock-out time
+        self.had_break: bool = True  # Set by manager at clock-out; defaults True for safety
 
     @property
     def hourly_rate(self) -> Decimal:
@@ -158,9 +167,9 @@ class Staff(Person):
 
     @hourly_rate.setter
     def hourly_rate(self, value: float):
-        """Requirement 14: Automated Guardrail for 2026 CA Minimum Wage ($16.00)."""
-        val = Decimal(str(value)) # Standardize input to Decimal
-        self._hourly_rate = max(val, Decimal("16.00")) # Enforce floor price
+        """Requirement 14: Automated Guardrail for CA Minimum Wage (from settings)."""
+        val = Decimal(str(value))
+        self._hourly_rate = max(val, MIN_WAGE)  # Enforce floor from settings
 
     def clock_in(self):
         """Initializes the labor session for productivity tracking."""
@@ -177,17 +186,22 @@ class Staff(Person):
         delta = self.shift_end - self.shift_start # Subtract timestamps
         return Decimal(str(delta.total_seconds() / 3600)).quantize(Decimal("0.01"))
 
-    def calculate_shift_pay(self) -> Decimal:
-        """Requirement 19/20: Overtime (1.5x after 8h) and CA Meal Penalty logic."""
-        hrs = self.get_total_hours() # Get work duration
+    def calculate_shift_pay(self, had_break: bool = True) -> Decimal:
+        """Requirement 19/20: Overtime (1.5x after 8h) and CA Meal Penalty logic.
+
+        Args:
+            had_break: True if employee took an adequate 30-min break. CA law
+                       requires a meal period for shifts exceeding 6 hours;
+                       failure triggers a 1-hour penalty at the regular rate.
+        """
+        hrs = self.get_total_hours()
         if hrs <= 8:
-            base_pay = hrs * self.hourly_rate # Regular time
+            base_pay = hrs * self.hourly_rate
         else:
-            # Split pay into regular and time-and-a-half segments
             base_pay = (8 * self.hourly_rate) + ((hrs - 8) * self.hourly_rate * Decimal("1.5"))
-        
-        # Meal Penalty: Add 1 hour of pay if the shift exceeded 5 hours (CA Law)
-        if hrs > 5:
+
+        # CA Meal Penalty: only applies if shift > 6h AND no adequate break taken
+        if hrs > 6 and not had_break:
             base_pay += self.hourly_rate
         return base_pay.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -202,6 +216,18 @@ class Cart:
         self.guest = guest # Reference to the Guest object (if seated)
         self.tax_rate = Decimal(str(TAX_RATE)) # Global tax constant
 
+    def void_item(self, name: str, staff=None, reason: str = "") -> bool:
+        """Removes the first matching item from the cart and logs the action."""
+        for item in self.items:
+            if item.name.lower() == name.lower():
+                self.items.remove(item)
+                if staff:
+                    SecurityLog.log_event(staff.staff_id, "VOID_ITEM", f"{item.name} | {reason}")
+                print(f"Voided: {item.name}")
+                return True
+        print(f"Item '{name}' not found in cart.")
+        return False
+
     def add_to_cart(self, item: MenuItem):
         """Validates inventory and clones the item to prevent 'Shared State' bugs."""
         if item.line_inv <= 0:
@@ -210,6 +236,7 @@ class Cart:
         cloned_item = item.clone() # Create a private copy of the MenuItem
         self.items.append(cloned_item) # Add the copy to the cart
         item.line_inv -= 1 # Deduct from the master menu inventory
+        item.units_sold += 1 # Track sales volume on the master item for analytics
 
     @property
     def subtotal(self) -> Decimal:
@@ -242,18 +269,18 @@ class Transaction:
         self.tip = Decimal("0.00") # Initialized tip
         self.timestamp = datetime.now() # Capture moment of sale
 
-    def apply_tip(self, amount_str: str):
-        """Parses user input for percentage ('20%') or dollar ('5.00') amounts."""
+    def apply_tip(self, amount_str: str) -> bool:
+        """Parses tip input. Returns True on success, False if format is invalid."""
         try:
-            clean = amount_str.replace("$", "").replace("%", "") # Strip UI symbols
-            if "%" in amount_str:
-                # Percentage of the subtotal
+            is_percent = "%" in amount_str  # Check BEFORE stripping symbols
+            clean = amount_str.replace("$", "").replace("%", "").strip()
+            if is_percent:
                 self.tip = (self.cart.subtotal * (Decimal(clean) / 100)).quantize(Decimal("0.01"))
             else:
-                # Flat dollar amount
                 self.tip = Decimal(clean).quantize(Decimal("0.01"))
-        except:
-            self.tip = Decimal("0.00") # Fallback for invalid input
+            return True
+        except (ValueError, InvalidOperation):
+            return False
 
     def to_dict(self):
         """Serializes the entire transaction including financials for the JSON log."""
@@ -272,12 +299,22 @@ class DailyLedger:
     """Singleton: The single source of truth for the restaurant's daily revenue."""
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, initial_sales=Decimal("0.00")):
         if cls._instance is None:
             cls._instance = super(DailyLedger, cls).__new__(cls)
-            cls._instance.total_revenue = Decimal("0.00") # Reset revenue to zero
-            cls._instance.transaction_count = 0 # Reset count to zero
         return cls._instance
+
+    def __init__(self, initial_sales=Decimal("0.00")):
+        if not hasattr(self, '_initialized'):
+            self.total_revenue = Decimal(str(initial_sales))
+            self.transaction_count = 0
+            self._initialized = True
+
+    @classmethod
+    def reset(cls, initial_sales: Decimal = Decimal("0.00")) -> 'DailyLedger':
+        """Destroys the current singleton and returns a fresh ledger. Call at new-day start."""
+        cls._instance = None
+        return cls(initial_sales)
 
     def record_sale(self, amount: Decimal):
         """Adds a finalized sale to the daily running total."""
@@ -293,9 +330,104 @@ class InventoryManager:
         """Compares current stock against Par Levels to generate a 'To-Do' list."""
         prep_list = []
         for item in self.menu.items:
+            if not item.is_active:
+                continue
             if item.line_inv < item.par_level:
                 prep_list.append({
                     "name": item.name,
                     "need": item.par_level - item.line_inv # Calculate discrepancy
                 })
         return prep_list # Return actionable data for the chef
+
+
+# ==============================================================================
+# RECEIPT, ADMIN & ANALYTICS MODELS
+# ==============================================================================
+
+class ReceiptPrinter:
+    """Formats and prints an ASCII bill for a completed transaction."""
+
+    @staticmethod
+    def print_bill(txn: 'Transaction'):
+        """Renders a structured receipt to the terminal."""
+        print("\n" + "=" * 42)
+        print(f"{'HOSPITALITY OS':^42}")
+        print(f"{'RECEIPT':^42}")
+        print("=" * 42)
+        print(f" Table: {txn.table_num:<22} TXN: {txn.txn_id}")
+        print(f" Server: {txn.staff.full_name}")
+        print(f" Time: {txn.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("-" * 42)
+        for item in txn.cart.items:
+            mod_total = sum(m.price for m in item.modifiers)
+            line_total = item.price + mod_total
+            print(f"  {item.name:<26} ${line_total:>6.2f}")
+            for mod in item.modifiers:
+                print(f"    {str(mod).strip()}")
+        print("-" * 42)
+        print(f"  {'Subtotal:':<28} ${txn.cart.subtotal:>6.2f}")
+        print(f"  {'Tax:':<28} ${txn.cart.sales_tax:>6.2f}")
+        print(f"  {'Tip:':<28} ${txn.tip:>6.2f}")
+        total = txn.cart.grand_total + txn.tip
+        print("=" * 42)
+        print(f"  {'TOTAL:':<28} ${total:>6.2f}")
+        print("=" * 42 + "\n")
+
+
+class MenuEditor:
+    """Administrative controller for live menu modifications."""
+
+    def __init__(self, menu: Menu):
+        self.menu = menu
+
+    def update_price(self, name: str, new_price: Decimal):
+        """Updates the price of a named menu item."""
+        item = self.menu.find_item(name)
+        if item:
+            item.price = Decimal(str(new_price))
+            print(f"Price updated: {item.name} -> ${item.price:.2f}")
+        else:
+            print(f"Item '{name}' not found on menu.")
+
+    def toggle_item_status(self, name: str):
+        """Flips the is_active flag to show or hide a seasonal item."""
+        item = self.menu.find_item(name)
+        if item:
+            item.is_active = not item.is_active
+            status = "available" if item.is_active else "unavailable (86'd)"
+            print(f"{item.name} is now {status}.")
+        else:
+            print(f"Item '{name}' not found on menu.")
+
+
+class AnalyticsEngine:
+    """Analyzes ledger and menu data to surface actionable insights."""
+
+    def __init__(self, ledger: 'DailyLedger', menu: Menu):
+        self.ledger = ledger
+        self.menu = menu
+
+    def get_top_performing_items(self, n: int = 5) -> List[MenuItem]:
+        """Returns the top N active items sorted by actual units sold this session."""
+        active = [i for i in self.menu.items if i.is_active]
+        return sorted(active, key=lambda x: x.units_sold, reverse=True)[:n]
+
+    def get_reorder_list(self) -> List[MenuItem]:
+        """Returns items whose line inventory has fallen below par level."""
+        return [i for i in self.menu.items if i.line_inv < i.par_level]
+
+
+class AdminSession:
+    """Manages the state and audit trail of a logged-in manager session."""
+
+    def __init__(self, staff: Staff, editor: MenuEditor):
+        self.staff = staff
+        self.editor = editor
+        self.is_active = True
+        self._action_log: List[str] = []
+
+    def log_action(self, action: str):
+        """Records an admin action to both the in-memory log and the security file."""
+        entry = f"{datetime.now().strftime('%H:%M:%S')} | {self.staff.full_name} | {action}"
+        self._action_log.append(entry)
+        SecurityLog.log_event(self.staff.staff_id, "ADMIN_ACTION", action)
