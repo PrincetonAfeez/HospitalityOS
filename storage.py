@@ -2,9 +2,13 @@ import json
 import os
 
 def save_to_json(data, filename):
-    """Universal helper to save dictionaries or append to JSON lists."""
+    """
+    Commit 12: Refactored with Atomic Persistence.
+    Uses a temporary file and os.replace to prevent data corruption.
+    """
+    temp_filename = f"{filename}.tmp"
     try:
-        # Task: Handle Log Files (Must always be lists)
+        # 1. Prepare the data payload
         if "log" in filename:
             logs = []
             if os.path.exists(filename):
@@ -12,21 +16,26 @@ def save_to_json(data, filename):
                     try:
                         logs = json.load(f)
                         if not isinstance(logs, list):
-                            logs = [logs] # Safety wrap
+                            logs = [logs]
                     except json.JSONDecodeError:
                         logs = []
-            
             logs.append(data)
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(logs, f, indent=4)
-        
-        # Task: Handle State Files (Direct Overwrite)
+            payload = logs
         else:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+            payload = data
+
+        # 2. Write to a temporary file first (The "Atomic" part)
+        with open(temp_filename, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=4)
+
+        # 3. Rename temp file to actual filename (OS-level atomic swap)
+        os.replace(temp_filename, filename)
         return True
+
     except Exception as e:
-        print(f"❌ Error saving to {filename}: {e}")
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+        print(f"❌ Atomic Save Error for {filename}: {e}")
         return False
 
 def load_from_json(filename):
