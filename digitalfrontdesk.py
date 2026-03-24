@@ -266,5 +266,20 @@ def handle_split_payment(cart, ledger):
             ledger.record_transaction(sub_cart.grand_total)
             # Repeat until cart.items is empty
             
+def finalize_order_to_kitchen(cart, table_num, kds):
+    """
+    Commit 38: The 'Fire' command.
+    Sends items to KDS and prepares the cart for the next round of drinks/food.
+    """
+    if not cart.items:
+        print("❌ Cannot fire an empty order.")
+        return
+
+    kds.route_order(cart, table_num)
+    
+    # Optional: Mark items as 'fired' so they aren't sent twice
+    # For now, we assume the cart is cleared for 'rounds' of service
+    print(f"✅ Order fired for Table {table_num}.")            
+
 if __name__ == "__main__":
     main() # Execute the script

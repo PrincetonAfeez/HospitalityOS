@@ -238,6 +238,8 @@ class MenuItem:
         self.kitchen_notes = "" # Special prep instructions (e.g., 'Allergy')
         self.is_active = True # Soft-delete flag for seasonal items
         self.units_sold: int = 0 # Tracks actual sales volume for analytics
+        self.station = station.strip().title() # e.g., 'Grill', 'Salad', 'Bar'
+        self.order_time: Optional[datetime] = None # Tracked when sent to KDS
 
     def add_modifier(self, mod: Modifier):
         """Enforces the modifier cap (MAX_MODS from settings) to limit order complexity."""
@@ -350,6 +352,36 @@ class Menu:
 # LABOR & STAFF MODELS
 # ==============================================================================
 
+class KDSManager:
+    """Requirement: Objective 12 - Digital Ticket Routing."""
+    def __init__(self):
+        self.active_tickets = [] # List of 'tickets' (dicts or objects)
+
+    def route_order(self, cart: 'Cart', table_num: int):
+        """
+        Commit 38: Breaks a cart into station-specific tickets.
+        Ensures the Bar doesn't see Salad orders and vice-versa.
+        """
+        timestamp = datetime.now()
+        stations_involved = {item.station for item in cart.items}
+        
+        for station in stations_involved:
+            station_items = [i for i in cart.items if i.station == station]
+            ticket = {
+                "ticket_id": str(uuid.uuid4())[:6].upper(),
+                "table": table_num,
+                "station": station,
+                "items": [i.name for i in station_items],
+                "time_in": timestamp,
+                "status": "Pending"
+            }
+            self.active_tickets.append(ticket)
+            print(f"📠 KDS: Ticket sent to {station} for Table {table_num}")
+
+    def get_station_view(self, station_name: str):
+        """Returns only tickets for a specific screen (e.g., the Bar tablet)."""
+        return [t for t in self.active_tickets if t["station"] == station_name.title()]
+        
 class Staff(Person):
     """Represents an employee with CA labor-compliant payroll logic."""
     def __init__(self, staff_id, first_name, last_name, dept, role, hourly_rate):
