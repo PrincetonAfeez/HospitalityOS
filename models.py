@@ -76,7 +76,7 @@ class Modifier:
 
 class MenuItem:
     """The granular data object for every SKU sold in the restaurant."""
-    def __init__(self, category, name, price, line_inv, walk_in, freezer, par):
+    def __init__(self, name, price, category, walk_in, freezer, par_level=10, line_inv=0):
         self.category = category # Category for sales reporting (e.g., 'Liquor')
         self.name = name.strip() # The display name for the POS
         self.price = Decimal(str(price)) if Decimal(str(price)) > 0 else Decimal("0.00")
