@@ -9,6 +9,7 @@ import json # Used for serializing objects into the 'Shared Brain' JSON state
 import copy # Essential for deep-copying MenuItems to prevent shared state bugs in carts
 from datetime import datetime # Core utility for timestamping sales and clock-ins
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Industry standard for financial rounding precision
+from typing import List, Optional
 
 # Try-Except block to handle missing settings during initial environment setup
 try:
@@ -324,29 +325,24 @@ class Cart:
         subtotal = sum(item.price for item in self.items)
         return Decimal(str(subtotal)) * (1 + self.tax_rate)
 
-    def checkout(self) -> bool:
+    def checkout(self, ledger: 'Ledger') -> bool:
         """
-        Commit 16: Atomic Checkout.
-        Deducts inventory and clears cart in one movement.
+        Commit 27: Exception-based Checkout.
+        Raises HospitalityError instead of just returning False.
         """
         if not self.items:
-            print("⚠️ Checkout failed: Cart is empty.")
-            return False
+            raise HospitalityError("Cannot checkout an empty cart.")
             
-        # 1. Calculate the final hit to the wallet
         final_total = self.calculate_total()
+        ledger.record_transaction(final_total)
         
-        # 2. Update the Ledger
-        Ledger.record_transaction(final_total)
-        
-        # 3. Deduct Stock & Update Stats
         for item in self.items:
+            if item.line_inv <= 0:
+                 # This shouldn't happen with our Cart check, but it's a double-shield
+                 raise HospitalityError(f"Critical Stock Error: {item.name} is empty.")
             item.line_inv -= 1
             item.units_sold += 1
             
-        print(f"✅ Transaction Complete: {final_total} added to Ledger.")
-        
-        # 4. Reset Cart
         self.items = [] 
         return True
     
