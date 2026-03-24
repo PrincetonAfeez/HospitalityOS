@@ -62,32 +62,32 @@ def load_menu_from_csv(filename):
 # STATE MANAGEMENT
 # ==============================================================================
 
-def initialize_system_state(menu):
+def load_system_state():
     """
-    Handles 'New Day' vs 'Continue Shift' logic.
-    Returns the starting revenue figure as a Decimal.
+    Commit 19: Full Refactor of initialize_system_state.
+    Now rehydrates both the Menu and the Ledger from restaurant_state.json.
     """
     state_path = PathManager.get_path("restaurant_state.json")
-    state = load_from_json(state_path)
+    data = load_from_json(state_path)
     
-    if state:
-        # Sync Inventory Snapshot to the Live Menu
-        inventory_snapshot = state.get("menu_snapshot", [])
-        for saved_item in inventory_snapshot:
-            # Using our new Commit 5 fuzzy lookup
-            live_item = menu.find_item(saved_item.get("name"))
-            if live_item:
-                live_item.line_inv = int(saved_item.get("line_inv", live_item.line_inv))
+    # If no file exists, return fresh instances
+    if not data:
+        print("ℹ️ No previous state found. Starting fresh.")
+        return Menu(), Ledger()
 
-        # Check for resuming sales
-        net_sales = state.get("net_sales", 0)
-        if float(net_sales) > 0:
-            ans = input(f"Resume previous shift with ${float(net_sales):.2f} in sales? (y/n): ").strip().lower()
-            if ans in ('y', 'yes'):
-                return Decimal(str(net_sales))
-                
-    print("Starting new shift with fresh ledger.")
-    return Decimal("0.00")
+    # 1. Rebuild the Menu
+    menu = Menu()
+    for item_data in data.get("menu_snapshot", []):
+        menu.add_item(MenuItem.from_dict(item_data))
+
+    # 2. Rebuild the Ledger (The new part!)
+    saved_revenue = Decimal(data.get("net_sales", "0.00"))
+    saved_count = data.get("transaction_count", 0)
+    
+    ledger = Ledger(initial_revenue=saved_revenue, initial_count=saved_count)
+    
+    print(f"✅ Recovery Complete: ${saved_revenue} restored to Ledger.")
+    return menu, ledger
 
 
 def save_system_state(menu, ledger):
