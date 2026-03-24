@@ -12,6 +12,7 @@ from decimal import Decimal # Ensuring financial precision for loyalty calculati
 from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
 from storage import save_to_json  # Guest persistence
+from models import Person, Table, Guest # Now importing both
 
 # ==============================================================================
 # GUEST MODEL (Domain: Front Desk)
@@ -122,15 +123,9 @@ def main():
     print("\n--- Part A: Reservation InTake ---\n")
     
     # Define your actual dining room layout
-    floor_map = [
-        Table(101, 2), Table(102, 2), # Deuces
-        Table(201, 4), Table(202, 4), # 4-Tops
-        Table(301, 8)                # Large Party Table
-    ]
-
+    floor_map = [Table(101, 2), Table(102, 2), Table(201, 4), Table(202, 4), Table(301, 8)]
     guest_obj, adults, kids = get_resy_details()
-    
-    # Pass floor_map to handle_arrival for smart seating
+    # FIX: Pass floor_map here
     handle_arrival(guest_obj, adults, kids, floor_map)
 
 def get_resy_details():
@@ -185,6 +180,9 @@ def get_resy_details():
     }
     save_to_json(guest_record, "guest_log.json")
 
+    total = adults + children
+    current_guest = Guest(generated_id, first_name, last_name, phone, party_size=total, allergies=allergies)
+
     # 8. Confirmation UX
     print(f"\n--- Reservation Confirmed ---")
     print(f"Guest: {current_guest.full_name} | ID: {current_guest.guest_id}")
@@ -193,7 +191,7 @@ def get_resy_details():
     # Returning the full object plus temporary party counts
     return current_guest, adults, children
 
-def handle_arrival(guest_obj, adults, children):
+def handle_arrival(guest_obj, adults, children, floor_map): # FIX: Accept floor_map
     """
     Handles physical arrival, table assignment, and hand-off to POS.
     """
