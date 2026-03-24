@@ -1,4 +1,8 @@
+"""Write menu_data to data/menu.csv via PathManager (run from repo root)."""
+
 import csv
+
+from utils import PathManager
 
 menu_data = [
     {"category": "Shareables", "name": "Baked Jumbo Wings", "unit_price": 18.00, "line_inv": 10, "walk_in_inv": 5, "freezer_inv": 5, "par_level": 20},
@@ -43,14 +47,12 @@ menu_data = [
     {"category": "Desserts", "name": "Tiramisu", "unit_price": 14.00, "line_inv": 10, "walk_in_inv": 5, "freezer_inv": 5, "par_level": 20}
 ]
 
-# We write this to "menu.csv"
-with open("menu.csv", "w", newline="", encoding="utf-8") as file:
-    # Notice we include 'category' because it's in your dict, 
-    # but the Auditor script looks specifically for 'name', 'unit_price', etc.
-    fieldnames = ["category", "name", "unit_price", "line_inv", "walk_in_inv", "freezer_inv", "par_level"]
-    writer = csv.DictWriter(file, fieldnames=fieldnames)
-    
-    writer.writeheader()
-    writer.writerows(menu_data)
-
-print("✅ menu.csv generated! The KeyError should now be resolved.")
+if __name__ == "__main__":
+    # Target path matches database.load_system_state() (data/menu.csv).
+    out_path = PathManager.get_path("menu.csv")
+    with open(out_path, "w", newline="", encoding="utf-8") as file:
+        fieldnames = ["category", "name", "unit_price", "line_inv", "walk_in_inv", "freezer_inv", "par_level"]
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(menu_data)
+    print(f"Wrote {out_path}")
