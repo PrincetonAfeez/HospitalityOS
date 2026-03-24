@@ -1,18 +1,23 @@
-#Project: The "86-List" Inventory Manager
-#Focus: changed from hard coded dict to menu.csv file
-#Focus: Permanent Record keeping. generates audit_history.log, shopping_list.txt, shopping_list_YYYY-MM-DD.csv
-#New Feature: Function Separation: The logic is no longer one giant "main" function. It is split into load_inventory_from_menu, run_inventory_audit, and print_audit_report.
-#New Feature: creates a seamless bridge between your POS and your Audit. It now attempts to find restaurant_state.json first. If it finds the file, it auto-fills the "Units Sold" for the manager; if the file is missing, it gracefully falls back to asking the manager manually.
-#New Feature: The "No-Duplicate" Shopping List. Combining File I/O (the "a" mode) with RegEx (the "laser eye") to create a "Smart Logger."
+"""
+HospitalityOS v4.0 - Nightly Inventory & Shrinkage Auditor
+Architect: Princeton Afeez
+Description: Automatically bridges POS sales with Physical counts. 
+             Detects theft (shrinkage), manages prep levels, and 
+             generates duplicate-proof shopping lists.
+"""
 
-import csv
-import sys
-import json
-import os
-import re
-from datetime import datetime
-from decimal import Decimal
-from validator import get_int
+import csv        # Standard library for reading/writing menu.csv
+import sys        # Used for safe system exits during critical errors
+import json       # Used to parse the POS 'Shared Brain' (restaurant_state.json)
+import os         # Handles file existence checks and directory lookups
+# Use re for the 'Laser Eye' Regex to prevent duplicate shopping entries
+import re         
+from datetime import datetime # Timestamping for audit logs and CSV naming
+from decimal import Decimal   # Critical for financial precision (avoids float errors)
+
+# --- INTERNAL MODULE IMPORTS ---
+from utils import PathManager, print_divider # Handles cross-platform paths and UI
+from validator import get_int                 # Ensures manager input is numeric
 
 # =================================================================
 # PHASE 1: CUSTOM EXCEPTIONS & DATA LOADING
@@ -20,51 +25,57 @@ from validator import get_int
 
 class InventoryError(Exception):
     """Custom exception class to handle business-logic errors during inventory counts."""
-    pass # This inherits from the base Exception class without adding new behavior
+    # This inherits from the base Exception class to stop logic when counts are impossible
+    pass 
 
-def load_inventory_from_menu(filename="menu.csv"):
-    # This finds the absolute path to the folder containing THIS script
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    # This joins that folder path with your filename
-    full_path = os.path.join(base_path, filename)
-
-    """Reads the master inventory data, prices, and par levels from a CSV file."""
-    inventory_list = []  # Initialize an empty list to store dictionary objects for each item
+def load_inventory_from_menu():
+    """Reads the master inventory data, prices, and par levels from menu.csv."""
+    # Use the PathManager to find the absolute path regardless of OS
+    full_path = PathManager.get_path("menu.csv")
+    
+    # Initialize an empty list to store dictionary objects for each menu item
+    inventory_list = []  
+    
     try:
         # Open the CSV file in read mode with UTF-8 encoding to prevent character errors
         with open(full_path, mode="r", newline="", encoding="utf-8") as file:
-            reader = csv.DictReader(file)  # Create a reader that maps header row to keys
+            # Create a reader that maps the header row (name, unit_price, etc.) to keys
+            reader = csv.DictReader(file)  
           
             for row in reader:  # Iterate through every row (item) in the spreadsheet
                 # Convert string-based CSV data into numeric types for calculations
-                row["unit_price"] = Decimal(str(row["unit_price"]))  # Decimal for financial precision
-                row["line_inv"] = int(row["line_inv"])        # Convert line count to integer
-                row["walk_in_inv"] = int(row["walk_in_inv"])  # Convert walk-in count to integer
-                row["freezer_inv"] = int(row["freezer_inv"])  # Convert freezer count to integer
-                row["par_level"] = int(row["par_level"])      # Convert par level to integer
-                # Feature 6: Pre-calculate total building stock available at shift start
+                row["unit_price"] = Decimal(str(row["unit_price"]))  # Precision for money
+                row["line_inv"] = int(row["line_inv"])        # Current line stock
+                row["walk_in_inv"] = int(row["walk_in_inv"])  # Secondary storage stock
+                row["freezer_inv"] = int(row["freezer_inv"])  # Frozen storage stock
+                row["par_level"] = int(row["par_level"])      # The 'Safety' threshold
+                
+                # FEATURE 6: Pre-calculate total building stock available at shift start
+                # Summing all three storage locations into one 'Starting' value
                 row["starting_inv"] = row["line_inv"] + row["walk_in_inv"] + row["freezer_inv"]
-                inventory_list.append(row)  # Append the processed dictionary to the list
-        return inventory_list  # Return the list of menu items to the calling function
+                inventory_list.append(row)  # Append the processed item to our list
+        return inventory_list  # Return the list of items for the audit loop
     except FileNotFoundError:  # Handle the error if the menu.csv file is missing
-        print("❌ Error: menu.csv not found.")  # Inform the user of the specific error
-        sys.exit()  # Terminate the program safely to avoid further errors
+        print(f"❌ Error: {full_path} not found. Run setup_os.py.")
+        sys.exit()  # Terminate the program safely to avoid a crash
 
-def load_sales_data(filename="restaurant_state.json"):
-    """Loads POS state and builds an inventory dict from the menu_snapshot key."""
+def load_sales_data():
+    """Loads POS state and builds an inventory dict from the Shared Brain."""
+    # Locate the restaurant_state.json file via PathManager
+    filename = PathManager.get_path("restaurant_state.json")
+    
     try:
         with open(filename, "r") as f:
+            # Parse the JSON file into a Python dictionary
             data = json.load(f)
-        # restaurant_state.json stores inventory under "menu_snapshot", not "inventory".
-        # Build the expected {name: line_inv} dict so the audit loop works correctly.
-        inventory = {
-            item["name"]: item.get("line_inv", 0)
-            for item in data.get("menu_snapshot", [])
-        }
-        data["inventory"] = inventory
-        return data
+            
+        # Build the {name: current_qty} dict from the 'inventory_snapshot' key
+        # This allows the audit loop to quickly look up items by their name
+        inventory_map = data.get("inventory_snapshot", {})
+        return inventory_map
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"net_sales": 0.0, "inventory": {}}
+        # Fallback: If POS never ran today, return an empty map
+        return {}
 
 # =================================================================
 # PHASE 2: PROCESSING (THE "INPUT" LOOP)
@@ -72,90 +83,103 @@ def load_sales_data(filename="restaurant_state.json"):
 
 def run_inventory_audit():
     """Main logic loop for manager data entry, validation, and math processing."""
-    inventory = load_inventory_from_menu()  # Call the loader to get menu data
-    shared_brain = load_sales_data()        # Call the loader to get POS Shared Brain
+    # Load the static menu data and the dynamic POS sales data
+    inventory = load_inventory_from_menu()  
+    shared_brain_inv = load_sales_data()        
     
     # Storage container dictionary to collect data for the final reporting function
     audit_results = {
-        "shrinkage": [],    # List of items where units went missing (Feature 6)
-        "waste": [],        # List of items recorded as waste/comps (Feature 6)
-        "prep": [],         # List of items requiring a pull from storage (Feature 7)
-        "shopping": [],     # List of items that must be bought externally (Feature 7)
-        "total_sold_val": 0.0,  # Accumulator for actual net revenue (Feature 5)
-        "total_waste_val": 0.0, # Accumulator for financial loss due to waste
-        "total_shrink_val": 0.0 # Accumulator for financial loss due to shrinkage
+        "shrinkage": [],    # Items where units went missing mysteriously
+        "waste": [],        # Items recorded as waste/comps by the manager
+        "prep": [],         # Items requiring a pull from walk-in/freezer
+        "shopping": [],     # Items that must be purchased from vendors
+        "total_sold_val": Decimal("0.00"),  # Accumulator for net revenue
+        "total_waste_val": Decimal("0.00"), # Financial loss due to recorded waste
+        "total_shrink_val": Decimal("0.00") # Financial loss due to unrecorded shrinkage
     }
 
-    # Print a professional header for the manager's audit session
-    print("\n" + "="*60)
-    print(f"{'NIGHTLY MANAGER AUDIT ENTRY':^60}")
-    print("="*60)
+    # Render the Professional UX Header
+    print("\n" + "═"*60)
+    print(f"{'HOSPITALITY OS: NIGHTLY MANAGER AUDIT':^60}")
+    print("═"*60)
 
-    for item in inventory:  # Process every menu item one by one
-        print(f"\n📝 RECORDING: {item['name'].upper()}")  # Display the current item name
+    for item in inventory:  # Process every menu item found in the CSV
+        print(f"\n📝 RECORDING: {item['name'].upper()}")  # Visual separator per item
         
-        # Challenge 7 Sync: Compare CSV starting count vs POS ending count to determine units sold
-        # Formula: Starting CSV line_inv - Current JSON inventory count = units sold
-        pos_inventory_remaining = shared_brain["inventory"].get(item['name'], item['line_inv'])
+        # SYNC LOGIC: Compare CSV starting count vs POS ending count
+        # Formula: Starting line count - Current POS snapshot = Units Sold
+        # If the item isn't in the POS yet, we default to the starting line count
+        pos_inventory_remaining = shared_brain_inv.get(item['name'], item['line_inv'])
         pos_sold_calculated = item['line_inv'] - pos_inventory_remaining
         
-        if pos_sold_calculated > 0:  # If the POS reports sales, display it for the manager
-            print(f"  [ POS reports {pos_sold_calculated} units sold ]")
+        # UX: Provide a 'Hint' to the manager based on POS activity
+        if pos_sold_calculated > 0:
+            print(f"  [ 💡 POS reports {pos_sold_calculated} units sold today ]")
         
-        print(f"  [ Morning Start: {item['starting_inv']} ]")  # Display initial total stock
+        print(f"  [ 📦 Morning Start (Total Building): {item['starting_inv']} ]")
 
-        # Feature 1: Loop for current item until data entry passes all logical checks
-        
+        # FEATURE 1: Loop for current item until data entry passes all logical checks
         while True: 
             try:
-                # Feature 2 & 4: Safe numeric input; POS data is used as the suggested default
-                sold = get_int(f"  Units SOLD (Confirm POS {pos_sold_calculated}): ", min_val=0, allow_zero=True)
-                waste = get_int(f"  Units WASTED/COMPED: ", min_val=0, allow_zero=True)
-                physical = get_int(f"  FINAL PHYSICAL COUNT: ", min_val=0, allow_zero=True)
+                # FEATURE 2 & 4: Safe numeric input using our central validator
+                sold = get_int(f"  Units SOLD (Confirm POS {pos_sold_calculated}): ", min_val=0)
+                waste = get_int(f"  Units WASTED/COMPED: ", min_val=0)
+                physical = get_int(f"  FINAL PHYSICAL COUNT (Total): ", min_val=0)
 
-                # Feature 3: FAT FINGER GUARDRAIL - Verification prompt for high numbers
+                # FEATURE 3: FAT FINGER GUARDRAIL - Verification prompt for high numbers
+                # Helps prevent accidentally typing '200' instead of '20'
                 if sold > 100 or waste > 100 or physical > 100:
-                    confirm = input(f"  ⚠️  {max(sold, waste, physical)} seems high. Confirm? (y/n): ").lower()
-                    if confirm != 'y': continue  # Restart the 'while' loop for this item
+                    confirm = input(f"  ⚠️  {max(sold, waste, physical)} seems unusually high. Confirm? (y/n): ").lower()
+                    if confirm != 'y': continue  # Restart the loop for this specific item
 
-                # Feature 6: IMPOSSIBLE COUNT EXCEPTION - Prevents entering more than existed
+                # FEATURE 6: IMPOSSIBLE COUNT EXCEPTION
+                # Logic: You cannot sell/waste/have more than the starting inventory
                 if (sold + waste + physical) > item['starting_inv']:
-                    # Raise custom exception to stop the logic and force a re-entry
-                    raise InventoryError(f"Math Error: You only started with {item['starting_inv']} {item['name']}.")
+                    # Trigger custom exception to force re-entry
+                    raise InventoryError(f"Math Error: Only started with {item['starting_inv']} {item['name']}.")
                 
-                # Feature 5: FINANCIAL MATH - Calculate dollar value of sold units
-                item_sales_val = sold * item["unit_price"]  # Price times units sold
-                audit_results["total_sold_val"] += item_sales_val  # Add to the shift's net total
+                # FEATURE 5: FINANCIAL MATH - Calculate dollar value of sold units
+                item_sales_val = sold * item["unit_price"]
+                audit_results["total_sold_val"] += item_sales_val  # Add to shift net revenue
                 
-                # WASTE TRACKING: Process items intentionally removed from inventory
+                # WASTE TRACKING: Process items intentionally removed (e.g., dropped on floor)
                 if waste > 0:
-                    waste_loss = waste * item["unit_price"]  # Calculate value of wasted stock
-                    audit_results["total_waste_val"] += waste_loss  # Add to total waste accumulator
-                    # Append data to waste list for the final report table
-                    audit_results["waste"].append({"name": item['name'], "qty": waste, "loss": waste_loss, "base_sales": item_sales_val})
+                    waste_loss = waste * item["unit_price"]
+                    audit_results["total_waste_val"] += waste_loss # Track the 'Known' loss
+                    # Log details for the final report table
+                    audit_results["waste"].append({
+                        "name": item['name'], "qty": waste, 
+                        "loss": waste_loss, "base_sales": item_sales_val
+                    })
 
-                # SHRINKAGE MATH: Detect unexplained inventory loss (Feature 6)
-                expected = item["starting_inv"] - sold - waste  # Calculated amount that SHOULD be left
-                if physical < expected:  # If reality is less than calculation...
-                    missing = expected - physical  # Calculate the exact gap
-                    shrink_loss = missing * item["unit_price"]  # Calculate the financial loss
-                    audit_results["total_shrink_val"] += shrink_loss  # Add to shrink accumulator
-                    # Append data to shrinkage list for the final report table
-                    audit_results["shrinkage"].append({"name": item['name'], "qty": missing, "loss": shrink_loss, "base_sales": item_sales_val})
+                # SHRINKAGE MATH: Detect 'Unknown' inventory loss (Theft or unrecorded waste)
+                # Expected = What started - (What sold + What was wasted)
+                expected = item["starting_inv"] - sold - waste  
+                if physical < expected:  # If reality is less than what the math says...
+                    missing = expected - physical  # Calculate the gap (the shrinkage)
+                    shrink_loss = missing * item["unit_price"]  # Value of missing goods
+                    audit_results["total_shrink_val"] += shrink_loss  # Track the 'Unknown' loss
+                    # Log details for the final report table
+                    audit_results["shrinkage"].append({
+                        "name": item['name'], "qty": missing, 
+                        "loss": shrink_loss, "base_sales": item_sales_val
+                    })
                 
-                # Feature 7: PREP vs SHOPPING LOGIC - Location-aware stock management
-                if physical < item["par_level"]:  # Check if physical stock is below 'safety' par
-                    shortage = item["par_level"] - physical  # Calculate the total units needed
-                    # If storage locations have enough to cover the need, it is a 'Prep' task
+                # FEATURE 7: PREP vs SHOPPING LOGIC
+                # Logic: If physical count < Par, we need to restock
+                if physical < item["par_level"]:  
+                    shortage = item["par_level"] - physical  # Units needed to reach safety
+                    
+                    # PREP: If walk-in or freezer has enough, it's an internal move
                     if (item["walk_in_inv"] + item["freezer_inv"]) >= shortage:
                         audit_results["prep"].append({"name": item['name'], "qty": shortage})
-                    # If the whole building is out of stock, it is a 'Shopping' task
+                    # SHOPPING: If the building is empty, we must order from a vendor
                     else:
                         audit_results["shopping"].append({"name": item['name'], "qty": shortage})
 
-                break  # Exit the 'while' loop; input is clean and logic is satisfied
-            except InventoryError as e:  # Catch the custom exception if it was raised
-                print(f"  ❌ {e} Please re-enter counts.")  # Print the error message to the user
+                break  # Exit the 'while' loop; input is validated and math is complete
+            except InventoryError as e:  # Catch the custom exception
+                print(f"  ❌ {e} Please re-verify the numbers.") 
         
     # Hand off the final collected results to the modular Reporting function
     print_audit_report(audit_results)
@@ -167,87 +191,98 @@ def run_inventory_audit():
 
 def print_audit_report(results):
     """Handles the UI display, permanent history logging, and CSV list generation."""
-    now = datetime.now()  # Capture the current date and time
-    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")  # Format for history log entry
-    file_date = now.strftime("%Y-%m-%d")  # Format for unique CSV file naming
+    now = datetime.now()  # Capture current date/time
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")  # For the log file
+    file_date = now.strftime("%Y-%m-%d")           # For the shopping CSV
+    
+    # Resolve the log path via PathManager
+    history_log = PathManager.get_path("audit_history.log")
 
-    # FINANCIAL SUMMARY CALCULATIONS (Feature 4 + Potential Revenue)
-    total_net = results["total_sold_val"]  # Actual revenue from units sold
-    # Potential revenue is Net + Waste + Shrink (Total value of used/lost goods)
+    # FINANCIAL SUMMARY CALCULATIONS
+    total_net = results["total_sold_val"]
+    # Potential Revenue = Net Sales + Money lost to Waste + Money lost to Shrink
     potential = total_net + results["total_waste_val"] + results["total_shrink_val"]
     
     # Output the primary financial table to the terminal
-    print("\n\n" + "="*60)
+    print("\n\n" + "═"*60)
     print(f"{'OFFICIAL AUDIT & REVENUE REPORT':^60}")
     print(f"{timestamp:^60}")
-    print("="*60)
+    print("═"*60)
 
-    print(f"\n[{'SHIFT REVENUE':^25}]")
+    print(f"\n[{'SHIFT REVENUE SUMMARY':^25}]")
     print(f"  TOTAL NET SALES (SOLD):         ${total_net:>12.2f}")
     print(f"  TOTAL WASTE VALUE:              ${results['total_waste_val']:>12.2f}")
     print(f"  TOTAL SHRINKAGE LOSS:           ${results['total_shrink_val']:>12.2f}")
     print(f"  TOTAL POTENTIAL REVENUE:        ${potential:>12.2f}")
 
     # Display the Shrinkage Breakdown table (Feature 5 & 6)
-    print("\n" + "="*75)
-    print(f"{'SHRINKAGE BREAKDOWN':<25} | {'QTY':>5} | {'LOSS $':>10} | {'% OF ITEM SALES'}")
+    print("\n" + "─"*75)
+    print(f"{'SHRINKAGE (UNKNOWN LOSS)':<25} | {'QTY':>5} | {'LOSS $':>10} | {'% IMPACT'}")
     print("-" * 75)
-    if results["shrinkage"]:  # Only print if shrinkage items exist
+    if results["shrinkage"]:
         for s in results["shrinkage"]:
-            # Calculate what % the loss represents relative to actual sales for that item
+            # Calculate % impact relative to actual item sales
             s_pct = (s['loss'] / s['base_sales'] * 100) if s['base_sales'] > 0 else 100.0
-            print(f"{s['name']:<25} | {s['qty']:>5} | ${s['loss']:>9.2f} | {s_pct:>14.1f}%")
-    else:  # Inform the manager if all inventory matches perfectly
-        print("  ✅ All physical units accounted for.")
+            print(f"{s['name']:<25} | {s['qty']:>5} | ${s['loss']:>9.2f} | {s_pct:>9.1f}%")
+    else:
+        print("  ✅ EXCELLENT: No shrinkage detected this shift.")
 
     # Display the Waste/Comp Log table (Feature 6)
-    print("\n" + "="*75)
-    print(f"{'WASTE & COMPS LOG':<25} | {'QTY':>5} | {'LOSS $':>10} | {'% OF ITEM SALES'}")
+    print("\n" + "─"*75)
+    print(f"{'WASTE & COMPS (KNOWN LOSS)':<25} | {'QTY':>5} | {'LOSS $':>10} | {'% IMPACT'}")
     print("-" * 75)
-    if results["waste"]:  # Only print if waste items exist
+    if results["waste"]:
         for w in results["waste"]:
-            # Calculate waste as a percentage of that item's revenue
             w_pct = (w['loss'] / w['base_sales'] * 100) if w['base_sales'] > 0 else 100.0
-            print(f"{w['name']:<25} | {w['qty']:>5} | ${w['loss']:>9.2f} | {w_pct:>14.1f}%")
-    else:  # Inform the manager if no waste was recorded
-        print("  ✅ No waste reported.")
+            print(f"{w['name']:<25} | {w['qty']:>5} | ${w['loss']:>9.2f} | {w_pct:>9.1f}%")
+    else:
+        print("  ✅ No waste recorded this shift.")
 
-    # Display the Kitchen Prep List (Feature 7)
-    print("\n" + "="*45)
-    print(f"{'KITCHEN PREP LIST':<30} | {'QTY':>5}")
+    # Display the Kitchen Prep List (Internal Stock Pulls)
+    print("\n" + "─"*45)
+    print(f"{'KITCHEN PREP LIST (RESTOCK)':<30} | {'QTY':>5}")
     print("-" * 45)
-    for p in results["prep"]: print(f"{p['name']:<30} | {p['qty']:>5}")
+    if results["prep"]:
+        for p in results["prep"]: print(f"{p['name']:<30} | {p['qty']:>5}")
+    else:
+        print("  ✅ All line levels are sufficient.")
 
-    # PERMANENT LOGGING: Save a summary of this shift to the audit_history.log file
-    with open("audit_history.log", "a", encoding="utf-8") as f:
-        # Append mode ('a') ensures we don't overwrite previous days' data
-        f.write(f"\n[{timestamp}] REV: ${total_net:.2f} | SHRINK: ${results['total_shrink_val']:.2f}\n")
+    # PERMANENT LOGGING: Append the summary to audit_history.log
+    with open(history_log, "a", encoding="utf-8") as f:
+        # Append mode ensures we keep a multi-year audit trail
+        f.write(f"[{timestamp}] NET: ${total_net:.2f} | WASTE: ${results['total_waste_val']:.2f} | SHRINK: ${results['total_shrink_val']:.2f}\n")
 
-    # FEATURE 7: Generate a unique CSV Shopping List for external ordering
-    if results["shopping"]:  # Only create the file if there is something to buy
-        csv_name = f"shopping_list_{file_date}.csv"  # Name the file with today's date
+    # FEATURE 7: Generate a unique CSV Shopping List (The 'Smart Logger')
+    if results["shopping"]:
+        csv_name = f"shopping_list_{file_date}.csv"
+        csv_path = PathManager.get_path(csv_name)
         
-        file_exists = os.path.isfile(csv_name)
+        file_exists = os.path.isfile(csv_path)
 
-        with open(csv_name, "a+", newline="") as f:  # Open file in append+read mode ('a+')
-            f.seek(0)  # Move to the start of the file to read existing content
+        # Use 'a+' (Append + Read) to check for duplicates before writing
+        with open(csv_path, "a+", newline="") as f:
+            f.seek(0)  # Reset pointer to start of file to read existing entries
             existing_content = f.read()
-            writer = csv.writer(f)  # Create a CSV writer object
+            writer = csv.writer(f)
             
             if not file_exists:
-                writer.writerow(["Item", "Qty to Order"])  # Write the header row
+                writer.writerow(["Item", "Qty to Order"]) # Write header for new files
             
-            for s in results["shopping"]:  # Iterate through the shopping results
-                # RegEx Check: Look for the item name at the start of a line
+            for s in results["shopping"]:
+                # REGEX: Search for the item name at the start of any line
+                # This ensures we don't list 'Margarita' twice in the same day
                 if not re.search(f"^{re.escape(s['name'])}", existing_content, re.MULTILINE):
-                    writer.writerow([s['name'], s['qty']])  # Write the name and quantity as a row
+                    writer.writerow([s['name'], s['qty']]) 
                 else:
-                    print(f"  ⏭️  Note: {s['name']} is already on today's list. Skipping duplicate.")
+                    print(f"  ⏭️  SmartSync: {s['name']} already on today's order. Skipping duplicate.")
                     
-        print(f"\n✅ CSV Shopping List generated: {csv_name}")  # Notify the manager
-        
+        print(f"\n✅ REORDER LIST READY: {csv_path}") 
 
-# Standard Python check: Run the audit logic only if this script is executed directly
+# Standard execution block
 if __name__ == "__main__":
-    run_inventory_audit()  # Execute the main function to start the manager audit
-    
+    try:
+        run_inventory_audit()
+    except KeyboardInterrupt:
+        # Safe exit if the manager hits Ctrl+C
+        print("\n\n⚠️  Audit Interrupted by User. No data saved.")
+        sys.exit()
