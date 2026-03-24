@@ -124,16 +124,22 @@ class Menu:
         self.items = {} 
 
     def add_item(self, item: MenuItem):
-        """Adds a MenuItem to the dictionary using its name as the key."""
-        self.items[item.name] = item
+        """Stores item using a normalized lowercase key."""
+        # Normalize the name for the dictionary key
+        clean_name = item.name.strip().lower()
+        self.items[clean_name] = item
 
     def find_item(self, name: str) -> Optional[MenuItem]:
-        """O(1) dictionary lookup. Returns None if item doesn't exist or is 86'd."""
-        # Use .get() to avoid KeyErrors
-        item = self.items.get(name)
+        """Performs a normalized lookup to handle whitespace and casing."""
+        if not name:
+            return None
+            
+        # Normalize the user input to match our stored keys
+        target = name.strip().lower()
+        item = self.items.get(target)
         
         if item and not item.is_active:
-            return None  # Treat 86'd items as not found
+            return None
         return item
 
 # ==============================================================================
