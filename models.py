@@ -876,6 +876,30 @@ class AnalyticsEngine:
 # Also update MenuEditor's loops if any exist, but it primarily 
 # uses find_item(), which we already fixed in Commit 5.
 
+def save_guest_feedback(guest_id, rating, comments=""):
+    """
+    Commit 42: Phase 3 - Item B.
+    Captures guest ratings (1-5) and persists to feedback.json.
+    """
+    feedback_file = os.path.join(os.path.dirname(__file__), "feedback.json")
+    new_entry = {
+        "guest_id": guest_id,
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comments": comments
+    }
+    
+    # Load existing or start new list
+    data = []
+    if os.path.exists(feedback_file):
+        with open(feedback_file, "r") as f:
+            data = json.load(f)
+            
+    data.append(new_entry)
+    
+    with open(feedback_file, "w") as f:
+        json.dump(data, f, indent=4)
+    print("🌟 Feedback saved. Thank you!")
 
 class AdminSession:
     """Manages the state and audit trail of a logged-in manager session."""

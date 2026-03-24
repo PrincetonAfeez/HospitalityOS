@@ -121,7 +121,7 @@ def run_pos(table_num: int, guest=None):
 
             os.system('cls' if os.name == 'nt' else 'clear')
             ReceiptPrinter.print_bill(txn)
-
+            
             # Award loyalty points if guest is present
             if guest:
                 guest.add_loyalty_points(cart.subtotal)
@@ -142,6 +142,12 @@ def run_pos(table_num: int, guest=None):
             print("Table session cancelled. Returning to Front Desk.")
             return False
 
+    if payment_success:
+        print(f"\nThank you, {guest.full_name}!")
+        stars = get_int("How was everything today? (1-5 stars): ", min_val=1, max_val=5)
+        note = input("Any additional comments? ")
+        save_guest_feedback(guest.guest_id, stars, note)
+
 def apply_tax_exemption(cart, manager_staff):
     """
     Commit 40: Manager-only flow to exempt a check from tax.
@@ -158,3 +164,14 @@ def apply_tax_exemption(cart, manager_staff):
         print(f"✅ Tax removed. New Total: ${cart.grand_total}")
     else:
         print("Action cancelled.")
+
+def manager_comp_flow(cart, manager):
+    """UI for applying discounts/comps."""
+    print("\n--- MANAGER COMP INTERFACE ---")
+    for i, item in enumerate(cart.items):
+        print(f"{i}: {item.name} (${item.price})")
+    
+    idx = int(input("Select item index to COMP: "))
+    reason = input("Enter reason (e.g., 'Kitchen Error', 'Employee Meal'): ")
+    
+    cart.apply_comp(idx, manager.staff_id, reason)
