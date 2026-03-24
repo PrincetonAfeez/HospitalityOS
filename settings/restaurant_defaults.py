@@ -45,3 +45,7 @@ MAX_MODS = 3
 # Default file paths
 MENU_FILE = "menu.csv"
 STAFF_FILE = "staff.csv"
+
+# settings/restaurant_defaults.py
+GRATUITY_THRESHOLD = 6
+GRATUITY_RATE = Decimal("0.18")

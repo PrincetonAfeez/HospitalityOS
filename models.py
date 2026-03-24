@@ -11,6 +11,8 @@ from datetime import datetime # Core utility for timestamping sales and clock-in
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Industry standard for financial rounding precision
 from typing import List, Optional
 
+from HospitalityOS.settings.restaurant_defaults import GRATUITY_RATE, GRATUITY_THRESHOLD
+
 
 # Try-Except block to handle missing settings during initial environment setup
 try:
@@ -381,7 +383,7 @@ class KDSManager:
     def get_station_view(self, station_name: str):
         """Returns only tickets for a specific screen (e.g., the Bar tablet)."""
         return [t for t in self.active_tickets if t["station"] == station_name.title()]
-        
+
 class Staff(Person):
     """Represents an employee with CA labor-compliant payroll logic."""
     def __init__(self, staff_id, first_name, last_name, dept, role, hourly_rate):
@@ -529,8 +531,8 @@ class Cart:
     def __init__(self, guest=None):
         self.items: List[MenuItem] = [] 
         self.guest = guest 
-        self.tax_rate = Decimal(str(TAX_RATE))
-        self.is_finalized = False 
+        self.gratuity_rate = Decimal(str(GRATUITY_RATE)) # Added for Commit 39
+        self.is_finalized = False
 
     def add_item(self, item: MenuItem) -> bool:
         """
@@ -633,6 +635,21 @@ class Cart:
         """The final pre-tip cost: Subtotal + Sales Tax."""
         return self.subtotal + self.sales_tax
 
+    @property
+    def auto_gratuity(self) -> Decimal:
+        """
+        Commit 39: Calculates 18% gratuity if party size >= threshold.
+        Note: Gratuity is usually calculated on the subtotal BEFORE tax.
+        """
+        if self.guest and self.guest.party_size >= GRATUITY_THRESHOLD:
+            return (self.subtotal * self.gratuity_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        return Decimal("0.00")
+
+    @property
+    def grand_total(self) -> Decimal:
+        """Updated to include auto-gratuity in the final sum."""
+        return self.subtotal + self.sales_tax + self.auto_gratuity
+    
 class Transaction:
     """The immutable historical record of a completed sale."""
     def __init__(self, cart: Cart, table_num: int, staff: Staff):
@@ -762,11 +779,17 @@ class ReceiptPrinter:
         print("-" * 42)
         print(f"  {'Subtotal:':<28} ${txn.cart.subtotal:>6.2f}")
         print(f"  {'Tax:':<28} ${txn.cart.sales_tax:>6.2f}")
+
+        if txn.cart.auto_gratuity > 0:
+            print(f"  {'Auto-Gratuity (18%):':<28} ${txn.cart.auto_gratuity:>6.2f}")
+
         print(f"  {'Tip:':<28} ${txn.tip:>6.2f}")
         total = txn.cart.grand_total + txn.tip
         print("=" * 42)
         print(f"  {'TOTAL:':<28} ${total:>6.2f}")
         print("=" * 42 + "\n")
+        # Commit 39: Show Auto-Gratuity if applicable
+
 
 
 class MenuEditor:
