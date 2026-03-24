@@ -171,7 +171,7 @@ def manager_comp_flow(cart, manager):
     
     cart.apply_comp(idx, manager.staff_id, reason)
 
-def process_checkout(table, guest, ledger):
+def process_checkout(table, guest, ledger, floor_map):
     """
     Hospitality OS: Final Checkout Controller.
     Handles payment, robust tip parsing, loyalty points, and guest feedback.
@@ -241,9 +241,8 @@ def process_checkout(table, guest, ledger):
     # Commit 45: Update persistence after guest leaves
     from models import save_table_session
     # Assuming floor_map is available in your global scope or passed in
-    save_table_session(all_tables) 
-    
-    return txn
+    save_table_session(floor_map)  
+
     return txn
 
 def display_gm_dashboard(ledger, staff_list):
