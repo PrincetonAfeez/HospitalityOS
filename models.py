@@ -21,16 +21,35 @@ from settings.restaurant_defaults import (
 # ==============================================================================
 
 class SecurityLog:
-    """Provides an immutable forensic audit trail."""
+    """
+    Requirement: Commit 11 - Forensic Dual-Signature Logging.
+    Ensures accountability by linking every sensitive action to two individuals.
+    """
     @staticmethod
-    def log_event(staff_id: str, action: str, details: str) -> None:
+    def log_event(staff_id: str, action: str, details: str, manager_id: str = "SYSTEM"):
+        """
+        Records an audit entry in the security.log file.
+        Format: [Timestamp] STAFF: {ID} | AUTH: {MGR_ID} | ACTION: {TYPE} | MSG: {DETAILS}
+        """
+        from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = f"[{timestamp}] STAFF: {staff_id} | ACTION: {action} | DETAILS: {details}\n"
+        
+        # Dual-signature string construction
+        log_entry = (
+            f"[{timestamp}] STAFF: {staff_id:<8} | AUTH: {manager_id:<8} | "
+            f"ACTION: {action:<15} | MSG: {details}\n"
+        )
+        
+        # In HospitalityOS, we log to data/logs/security.log for persistence
+        log_path = "data/logs/security.log"
+        
         try:
-            with open("data/logs/security.log", "a") as f:
+            with open(log_path, "a", encoding="utf-8") as f:
                 f.write(log_entry)
-        except OSError:
-            pass 
+        except FileNotFoundError:
+            # Fallback for local root if data directory isn't initialized
+            with open("security.log", "a", encoding="utf-8") as f:
+                f.write(log_entry)
 
 class Person(BaseModel):
     """Base identity model with automatic formatting."""

@@ -194,34 +194,33 @@ def process_checkout(cart, table_num, ledger, staff):
 @require_manager_auth
 def void_item(current_staff, cart, item_index, authorized_by="N/A"):
     """
-    Commit 10: Removes a specific item from the cart.
-    Requirement: Must be intercepted by Manager Override.
+    Commit 10: Removes an item from the cart. 
+    Requires Manager Override.
     """
     if 0 <= item_index < len(cart.items):
         item = cart.items.pop(item_index)
-        
-        # We will expand this log in Commit 11
-        print(f"🗑️ VOID: {item.name} removed from bill by {authorized_by}.")
-        return True
-    return False
+        # Log the dual-signature (Commit 11 requirement)
+        SecurityLog.log_event(current_staff.staff_id, "VOID", f"Item: {item.name}", manager_id=authorized_by)
+        print(f"🗑️ Voided {item.name}")
 
 @require_manager_auth
 def comp_entire_table(current_staff, cart, authorized_by="N/A"):
     """
-    Commit 10: Discounts the entire bill to $0.00 (Complimentary).
-    Requirement: High-risk action; requires Manager PIN.
+    Commit 10: Clears all items for a free meal.
+    Requires Manager Override.
     """
-    print(f"🎁 COMP: Entire table authorized for 100% discount by {authorized_by}.")
-    cart.items = [] # Clears the bill
-    return True
+    details = f"Value: {cart.grand_total}"
+    cart.items = []
+    SecurityLog.log_event(current_staff.staff_id, "COMP_TABLE", details, manager_id=authorized_by)
+    print("🎁 Table has been comped.")
 
 @require_manager_auth
 def manual_inventory_adjust(current_staff, item, new_amount, authorized_by="N/A"):
     """
-    Commit 10: Manually overrides the 'Shared Brain' inventory levels.
-    Requirement: Prevents unauthorized stock tampering.
+    Commit 10: Manually overrides stock levels.
+    Requires Manager Override.
     """
     old_val = item.line_inv
     item.line_inv = new_amount
-    print(f"📦 INV: {item.name} adjusted from {old_val} to {new_amount} by {authorized_by}.")
-    return True
+    SecurityLog.log_event(current_staff.staff_id, "INV_ADJUST", f"{item.name}: {old_val}->{new_amount}", manager_id=authorized_by)
+    print(f"📦 Inventory updated.")
