@@ -626,6 +626,22 @@ class Cart:
         
         return shares
     
+    def apply_comp(self, item_index: int, manager_id: str, reason: str):
+        """
+        Commit 41: 100% discount (Comp) for a specific item.
+        Tracks the manager who authorized it and the reason.
+        """
+        if 0 <= item_index < len(self.items):
+            item = self.items[item_index]
+            original_price = item.price
+            item.price = Decimal("0.00") # The 'Comp' action
+            
+            log_msg = f"Item {item.name} (${original_price}) COMPED by {manager_id}. Reason: {reason}"
+            SecurityLog.log_event(manager_id, "ITEM_COMP", log_msg)
+            print(f"✅ {item.name} has been comped.")
+            return True
+        return False
+    
     @property
     def subtotal(self) -> Decimal:
         """Aggregates prices of all items plus their nested modifiers."""
