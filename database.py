@@ -17,17 +17,15 @@ from storage import load_from_json, save_to_json
 # ==============================================================================
 
 def check_database_integrity():
-    """Verifies required data files exist before allowing system startup."""
-    required_files = ["menu.csv", "staff.csv"]
+    """Commit 3: Use PathManager for integrity checks."""
+    # Resolve absolute paths for the check
+    required_files = [PathManager.get_path("menu.csv"), PathManager.get_path("staff.csv")]
     all_ok = True
-    for filename in required_files:
-        if not os.path.exists(filename):
-            print(f"CRITICAL ERROR: Required file '{filename}' not found.")
+    for path in required_files:
+        if not os.path.exists(path):
+            print(f"CRITICAL ERROR: Required file '{path}' not found.")
             all_ok = False
-    if all_ok:
-        print("Database integrity check passed.")
     return all_ok
-
 
 # ==============================================================================
 # MENU PERSISTENCE
@@ -69,7 +67,9 @@ def initialize_system_state(menu):
     Handles 'New Day' vs 'Continue Shift' logic.
     Returns the starting revenue figure as a Decimal.
     """
-    state = load_from_json("restaurant_state.json")
+    state_path = PathManager.get_path("restaurant_state.json")
+    load_from_json(state_path) # Assuming load_from_json accepts a path
+    
     if state and float(state.get("net_sales", 0)) > 0:
         ans = input(
             f"Previous shift data found (${float(state['net_sales']):.2f} in sales). "
@@ -126,11 +126,12 @@ def validate_staff_login(login_id):
     Looks up a staff ID in staff.csv and returns a Staff object if found.
     CSV name format: "Last, First"
     """
-    if not os.path.exists("staff.csv"):
-        print("ERROR: staff.csv not found.")
+    staff_path = PathManager.get_path("staff.csv")
+    if not os.path.exists(staff_path):
+        print(f"ERROR: {staff_path} not found.")
         return None
-
-    with open("staff.csv", newline='', encoding='utf-8') as f:
+    
+    with open(staff_path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row['staff_id'].strip().upper() == login_id.strip().upper():
