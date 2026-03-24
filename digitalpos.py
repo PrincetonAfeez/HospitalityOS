@@ -13,6 +13,7 @@ from models import (
 )
 from validator import get_name, get_int, get_yes_no, get_float, get_staff_id
 from storage import save_to_json
+from datetime import datetime
 
 
 def _display_header(table_num, cart):
@@ -172,47 +173,88 @@ def manager_comp_flow(cart, manager):
 
 def process_checkout(table, guest, ledger):
     """
-    Commit 43: The final financial handshake.
-    Converts the Cart into a permanent Ledger entry.
+    Hospitality OS: Final Checkout Controller.
+    Handles payment, robust tip parsing, loyalty points, and guest feedback.
     """
-    if payment_success:
-        print(f"\nThank you, {guest.full_name}!")
-        stars = get_int("How was everything today? (1-5 stars): ", min_val=1, max_val=5)
-        note = input("Any additional comments? ")
-        save_guest_feedback(guest.guest_id, stars, note)
-    
     cart = table.current_cart
-    print(f"\n--- CHECKOUT: Table {table.table_id} ---")
+    print(f"\n" + "="*30)
+    print(f"      CHECKOUT: TABLE {table.table_id}      ")
+    print("="*30)
     print(f"Guest: {guest.full_name}")
-    print(f"Subtotal: ${cart.subtotal:.2f}")
-    print(f"Tax:      ${cart.sales_tax:.2f}")
+    print(f"Subtotal:      ${cart.subtotal:>10.2f}")
+    print(f"Tax:           ${cart.sales_tax:>10.2f}")
+    
     if cart.auto_gratuity > 0:
-        print(f"Auto-Grat: ${cart.auto_gratuity:.2f}")
-    print(f"TOTAL DUE: ${cart.grand_total:.2f}")
+        print(f"Auto-Grat (18%): ${cart.auto_gratuity:>10.2f}")
+        
+    print(f"TOTAL DUE:     ${cart.grand_total:>10.2f}")
+    print("-" * 30)
 
-    # 1. Select Payment Method
+    # 1. Payment Method Selection
     method = input("Payment Method (Cash/Card): ").strip().title()
     
-    # 2. Process Tip (Phase 3 logic)
-    tip_input = input("Enter Tip Amount (e.g., '5.00' or '20%'): ")
-    
-    # 3. Create Immutable Transaction
+    # 2. Initialize Transaction Object
     from models import Transaction
     txn = Transaction(cart, method)
-    txn.apply_tip(tip_input)
     
-    # 4. Record to Global Ledger
-    ledger.record_transaction(txn.final_total)
-    
-    # 5. Update Guest Loyalty (Phase 3 - Item C)
-    # Award 1 point per $10 spent
-    points_earned = int(txn.final_total // 10)
-    guest.loyalty_points += points_earned
-    
-    # 6. Cleanup Table State
-    table.clear_table() # Sets to 'Dirty' for clear_and_reassign logic
-    
-    print(f"\n✅ Transaction Complete! ID: {txn.transaction_id}")
-    print(f"Loyalty Points Earned: {points_earned} (Total: {guest.loyalty_points})")
-    
+    # 3. Robust Tip Loop (Using your custom logic)
+    while True:
+        tip_input = input("Enter Tip (e.g., '5.00' or '20%'): ").strip()
+        if txn.apply_tip(tip_input):
+            break
+        print("❌ Invalid format. Please use '5.00' or '20%'.")
+
+    print(f"Final Total (incl. tip): ${txn.final_total:.2f}")
+
+    # 4. Finalize Financials & Record to Ledger
+    payment_success = False
+    try:
+        ledger.record_transaction(txn.final_total)
+        payment_success = True
+        print(f"\n✅ Payment Processed. Transaction ID: {txn.transaction_id}")
+    except Exception as e:
+        print(f"❌ Critical Error recording transaction: {e}")
+
+    # 5. The Feedback Loop (Commit 42 / Phase 3 - Item B)
+    if payment_success:
+        # Loyalty Points: 1 point per $10 spent (Phase 3 - Item C)
+        points_earned = int(txn.final_total // 10)
+        guest.loyalty_points += points_earned
+        print(f"✨ Loyalty Update: +{points_earned} points (Total: {guest.loyalty_points})")
+
+        print(f"\nThank you for dining with us, {guest.full_name}!")
+        try:
+            stars = int(input("How was your experience today? (1-5 stars): "))
+            if 1 <= stars <= 5:
+                note = input("Any additional comments? ")
+                # Import utility from models.py
+                from models import save_guest_feedback
+                save_guest_feedback(guest.guest_id, stars, note)
+            else:
+                print("Rating out of range. Skipping feedback.")
+        except ValueError:
+            print("Invalid input. Skipping feedback.")
+
+    # 6. Table Cleanup
+    table.clear_table() # Sets status to 'Dirty' for the busser
     return txn
+
+def display_gm_dashboard(ledger, staff_list):
+    """The 'Executive View' terminal dashboard."""
+    report = ledger.generate_gm_report(staff_list)
+    
+    print("\n" + "="*40)
+    print(f"       EXECUTIVE GM DASHBOARD        ")
+    print(f"       Date: {datetime.now().strftime('%Y-%m-%d')} ")
+    print("="*40)
+    print(f"Gross Sales:         ${report['total_sales']:>10.2f}")
+    print(f"Labor Expenses:      ${report['total_labor']:>10.2f}")
+    print(f"Labor Cost %:         {report['labor_percentage']:>10}%")
+    print(f"Total Transactions:   {report['transaction_count']:>10}")
+    print("-" * 40)
+    
+    if report['labor_percentage'] > 30:
+        print("⚠️ ALERT: Labor is high (>30%). Consider cutting staff.")
+    elif report['total_sales'] > 0:
+        print("✅ Efficiency: Prime Cost within healthy range.")
+    print("="*40)
