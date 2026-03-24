@@ -8,7 +8,7 @@ Description: Manages the Front-of-House (FOH) intake. Handles reservations,
 import uuid   # Used to generate unique 8-character Guest IDs for CRM tracking
 import digitalpos # Integration with the POS engine to transition guests to a table
 from decimal import Decimal # Ensuring financial precision for loyalty/tax logic
-from datetime import datetime
+from datetime import date, datetime
 
 # --- INTERNAL MODULE IMPORTS ---
 from validator import (
@@ -39,48 +39,6 @@ def main_front_desk(floor: FloorMap, waitlist: WaitlistManager):
     # 2. Transition to Seating Workflow
     handle_arrival(guest_obj, floor, waitlist)
 
-def collect_guest_details():
-    """
-    UX: Collects and validates all guest information.
-    Returns a hydrated Guest object ready for seating.
-    """
-    print("\n--- NEW RESERVATION ---")
-    
-    # 1. Collect Identity Information via the 'Input Shield' (validator.py)
-    first_name = get_name("First Name: ") 
-    last_name = get_name("Last Name: ")   
-    email = get_email("Email Address: ")  
-    
-    # 2. Collect Contact Info (Must be exactly 10 digits for SMS notifications)
-    phone = str(get_int("Mobile Number (10 digits): ", min_val=1000000000, max_val=9999999999))
-    
-    # 3. Collect Party Context
-    adults = get_int("Number of Adults: ", min_val=1)
-    children = get_int("Number of Children: ", min_val=0)
-    total_party = adults + children
-    
-    # 4. Scheduling (Validated against business hours/dates)
-    res_date = get_date("Date (MM/DD/YYYY): ")
-    res_time = get_time("Time (11:00-21:00): ")
-    
-    # 5. Allergy Logic: Multi-item list builder
-    allergies = []
-    if get_yes_no("Does this party have food allergies? (y/n): "):
-        print("Enter allergies one-by-one (Type 'DONE' to finish):")
-        while True:
-            item = input("> ").strip().title()
-            if item.upper() == "DONE": break
-            if item: allergies.append(item)
-
-    # 6. Instantiate the Unified Guest Object
-    # Use uuid to ensure every guest is unique even with the same name
-    generated_id = f"GST-{str(uuid.uuid4())[:8].upper()}"
-    new_guest = Guest(generated_id, first_name, last_name, phone, party_size=total_party)
-    new_guest.allergies = allergies # Add the extra context
-    
-    print(f"✅ Reservation created for {new_guest.full_name} ({total_party} pax).")
-    return new_guest
-
 def find_best_table(floor: FloorMap, party_size: int) -> Table:
     """
     Algorithm: Finds the 'Best Fit' table.
@@ -97,10 +55,91 @@ def find_best_table(floor: FloorMap, party_size: int) -> Table:
     candidates.sort(key=lambda x: x.capacity)
     return candidates[0]
 
-def handle_arrival(guest_obj: Guest, floor: FloorMap, waitlist: WaitlistManager):
+def trigger_guest_alerts(guest: Guest):
     """
-    Handles the physical seating of the guest or waitlist fallback.
+    Scans the guest profile for milestones and operational warnings.
     """
+    today = date.today()
+    alerts = []
+
+    # 1. Birthday Check (Month & Day match)
+    if guest.birthday and guest.birthday.month == today.month and guest.birthday.day == today.day:
+        alerts.append("🎂 BIRTHDAY TODAY: Offer complimentary dessert!")
+
+    # 2. Anniversary Check
+    if guest.anniversary and guest.anniversary.month == today.month and guest.anniversary.day == today.day:
+        alerts.append("🥂 ANNIVERSARY: Offer champagne toast!")
+
+    # 3. Reliability Warning (Task 4)
+    if guest.is_frequent_noshow:
+        alerts.append("⚠️ ATTENTION: Frequent No-Show (Credit Card Guarantee Required)")
+
+    # 4. VIP Status
+    if guest.is_vip:
+        alerts.append("💎 VIP GUEST: Priority seating and Manager greeting requested.")
+
+    if alerts:
+        print("\n" + "█" * 60)
+        print(f"  ALERTS FOR {guest.full_name.upper()}")
+        for msg in alerts:
+            print(f"  >> {msg}")
+        print("█" * 60 + "\n")
+
+# ==============================================================================
+# UPDATED COLLECTION LOGIC
+# ==============================================================================
+
+def collect_guest_details() -> Guest:
+    """
+    Refactored to capture Birthday/Anniversary and return a Pydantic Guest object.
+    """
+    print("\n--- NEW RESERVATION ---")
+    first_name = get_name("First Name: ") 
+    last_name = get_name("Last Name: ")   
+    phone = str(get_int("Mobile Number (10 digits): ", min_val=1000000000, max_val=9999999999))
+    
+    adults = get_int("Number of Adults: ", min_val=1)
+    children = get_int("Number of Children: ", min_val=0)
+    total_party = adults + children
+    
+    # --- TASK 3: Capture Milestone Data ---
+    bday = None
+    if get_yes_no("Is there a Birthday on file? (y/n): "):
+        bday = get_date("Enter Birthday (MM/DD/YYYY): ")
+
+    anniv = None
+    if get_yes_no("Is there an Anniversary on file? (y/n): "):
+        anniv = get_date("Enter Anniversary (MM/DD/YYYY): ")
+
+    allergies = []
+    if get_yes_no("Any food allergies? (y/n): "):
+        print("Enter allergies (Type 'DONE' to finish):")
+        while True:
+            item = input("> ").strip().title()
+            if item.upper() == "DONE": break
+            if item: allergies.append(item)
+
+    # Instantiate via Pydantic (No manual __init__ needed)
+    generated_id = f"GST-{str(uuid.uuid4())[:8].upper()}"
+    
+    return Guest(
+        guest_id=generated_id,
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        party_size=total_party,
+        birthday=bday,
+        anniversary=anniv,
+        allergies=allergies
+    )
+
+def handle_arrival(guest_obj: Guest, floor: FloorMap, waitlist):
+    """
+    Enhanced seating workflow with automated alerts.
+    """
+    # TRIGGER ALERTS IMMEDIATELY UPON ARRIVAL
+    trigger_guest_alerts(guest_obj)
+
     print(f"\n--- SEATING: {guest_obj.full_name.upper()} ---")
     
     # Attempt to find a table
