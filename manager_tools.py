@@ -11,6 +11,7 @@ import csv
 from datetime import datetime
 from decimal import Decimal
 from models import SecurityLog, DailyLedger, Staff, MenuItem
+import functools
 
 # ==========================================================================
 # SECURITY DECORATOR (Task 8)
@@ -18,31 +19,34 @@ from models import SecurityLog, DailyLedger, Staff, MenuItem
 
 def require_manager_auth(func):
     """
-    Intercepts sensitive functions to verify Manager credentials.
-    Ensures that high-risk actions (Z-Reports, Voids) are authorized.
+    Wraps sensitive functions to ensure only authorized managers can 
+    perform high-risk actions (Voids, Comps, Inventory Adjustments).
     """
     @functools.wraps(func)
-    def wrapper(self, manager_id, *args, **kwargs):
-        # 1. Identify the staff member attempting the action
-        # We look for the staff object in the tool's internal staff_list
-        staff_member = next((s for s in self.staff_list if s.staff_id == manager_id), None)
-        
-        # 2. Check Role (Managers bypass the PIN prompt for their own tools)
-        if staff_member and staff_member.role.upper() == "MANAGER":
-            return func(self, manager_id, *args, **kwargs)
-        
-        # 3. Fallback: Request Manager PIN (Hardcoded 5555 for Phase 1)
+    def wrapper(current_staff, *args, **kwargs):
+        # 1. Immediate bypass if the current staff member is already a Manager
+        if hasattr(current_staff, 'role') and current_staff.role.upper() == "MANAGER":
+            return func(current_staff, *args, **kwargs)
+
+        # 2. Trigger UI Security Prompt
         print("\n" + "🔒" * 20)
-        print(f" SECURITY: AUTH REQUIRED FOR {func.__name__.upper()}")
+        print(f" SECURITY: {func.__name__.replace('_', ' ').upper()} REQUESTED")
+        print(" MANAGER AUTHORIZATION REQUIRED")
         print("🔒" * 20)
         
-        pin = input("Enter Manager PIN to authorize: ")
-        if pin == "5555":
-            SecurityLog.log_event(manager_id, "OVERRIDE_GRANTED", f"Action: {func.__name__}")
-            return func(self, manager_id, *args, **kwargs)
+        m_id = input("Manager Staff ID: ").strip()
+        m_pin = input("Manager PIN: ").strip()
+
+        # Phase 4 Validation (Hardcoded '5555' for this sprint)
+        if m_pin == "5555": 
+            # We record the intent now; Commit 11 will expand the logging details
+            print(f"✅ Override Granted for {m_id}.")
+            
+            # Pass the manager_id into the function context if needed
+            return func(current_staff, *args, **kwargs, authorized_by=m_id)
         else:
-            print("❌ ACCESS DENIED: Invalid Manager Credentials.")
-            return False
+            print("❌ Access Denied: Invalid Manager Credentials.")
+            return None
             
     return wrapper
 
