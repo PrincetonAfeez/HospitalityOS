@@ -9,10 +9,18 @@ import random # Used for automated table assignment if no preference is given
 import uuid   # Used to generate a unique 4-character Guest ID for CRM tracking
 import digitalpos # Integration with the POS engine to transition guests to a table
 from decimal import Decimal # Ensuring financial precision for loyalty calculations
-from models import Person   # Inheriting base attributes (name) from the core model
 from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
 from storage import save_to_json  # Guest persistence
-from models import Person, Table, Guest, Reservation # Now importing both
+
+from models import (
+    Person,
+    Guest, 
+    Table, 
+    WaitlistManager,
+    Reservation, 
+    SecurityLog, 
+    InsufficientStockError
+)
 
 # ==============================================================================
 # MAIN ENGINE & LOGIC
@@ -103,53 +111,72 @@ def find_best_table(floor_map, party_size):
     candidates.sort(key=lambda x: x.capacity)
     return candidates[0]
 
+# Initialize a global or session-based waitlist manager
+active_waitlist = WaitlistManager()
+
+def clear_and_reassign(table: 'Table', floor_map, waitlist: WaitlistManager):
+    """
+    Called when a guest checks out. Clears the table and 
+    immediately checks if anyone on the waitlist fits.
+    """
+    table.clear_table() # Status becomes 'Dirty'
+    print(f"🧹 Table {table.table_id} is being bussed...")
+    
+    # Simulate bussing time or manual clear
+    table.status = "Available"
+    
+    # Check if someone waiting can take this table
+    next_party = waitlist.get_next_fit(table.capacity)
+    if next_party:
+        print(f"🔔 NOTIFICATION: Table {table.table_id} is ready for {next_party.guest.full_name}!")
+        next_party.is_notified = True
+        waitlist.remove_guest(next_party.guest.guest_id)
+
 def handle_arrival(guest_obj, adults, children, floor_map):
-    print(f"\n--- Part B: Guest Arrival ---")
-    print(f"Welcome back, {guest_obj.full_name}!")
+    # ... (previous verification and allergy logic) ...
+    total_guests = adults + children
     
-    # 1. Re-Verify Party Size
-    if get_yes_no("Is the party size still the same? (y/n): "):
-        total_guests = adults + children 
+    # [Rest of Table Assignment Logic]
+    assigned_table = find_best_table(floor_map, total_guests)
+
+    if assigned_table:
+        # 1. Update the Table Object
+        # This calls the method in models.py to set status to 'Occupied'
+        assigned_table.seat_guest(guest_obj.guest_id) 
+        
+        # 2. Update the Guest Object
+        # Links the Guest to the table for receipt/service tracking
+        guest_obj.is_seated = True
+        guest_obj.assigned_table = assigned_table.table_id
+        
+        table_num = assigned_table.table_id
+        print(f"✅ Table {table_num} (Capacity: {assigned_table.capacity}) assigned.")
+        print(f"Server Alert: {guest_obj.full_name} is now seated at Table {table_num}.")
+        
+        # 3. Security Audit
+        # Records who sat the guest and where (Objective 4 compliance)
+        SecurityLog.log_event("HOST_STATION", "GUEST_SEATED", f"Guest: {guest_obj.guest_id} -> Table: {table_num}")
+
+        # 4. Launch POS
+        print(f"\nEnjoy your meal! Table {table_num} is ready.")
+        success = digitalpos.run_pos(table_num, guest_obj)
+        
+        if not success:
+             print(f"⚠️ POS session for Table {table_num} ended without checkout.")
     else:
-        new_adults = get_int("Updated adult count: ", min_val=1)
-        new_kids = get_int("Updated children count: ", allow_zero=True)
-        total_guests = new_adults + new_kids
-    
-    # 2. Safety UX
-    if guest_obj.allergies:
-        print(f"\n*** KITCHEN ALERT: {', '.join(guest_obj.allergies)} ***")
-
-    # 3. Table Assignment (Commit 34: Smart Logic)
-    table_num = None
-    
-    if get_yes_no("Do you have a specific table preference? (y/n): "):
-        pref_id = get_int("Enter Table Number: ", min_val=1)
-        # Find that specific table in our map
-        match = next((t for t in floor_map if t.table_id == pref_id), None)
+        # ... (Waitlist logic we discussed previously) ...
+        print(f"❌ No available tables for {total_guests} guests.")
+        if get_yes_no("Would you like to join the waitlist? (y/n): "):
+            active_waitlist.add_to_waitlist(guest_obj, total_guests)
         
-        if match and match.status == "Available" and match.capacity >= total_guests:
-            table_num = match.table_id
-            match.seat_guest(guest_obj.guest_id)
+        # Commit 35: Waitlist Fallback
+        if get_yes_no("Would you like to join the waitlist? (y/n): "):
+            active_waitlist.add_to_waitlist(guest_obj, total_guests)
+            print("We will notify you as soon as a table opens up.")
         else:
-            print(f"⚠️ Table {pref_id} is unavailable or too small. Finding best alternative...")
+            print("Understood. Have a wonderful day!")
 
-    # If no preference or preference failed, use Smart Seating
-    if not table_num:
-        best_table = find_best_table(floor_map, total_guests)
-        if best_table:
-            table_num = best_table.table_id
-            best_table.seat_guest(guest_obj.guest_id)
-            print(f"✅ Table {table_num} (Capacity: {best_table.capacity}) assigned.")
-        else:
-            print(f"❌ No available tables for {total_guests} guests.")
-            return # Waitlist logic (Commit 35) goes here
 
-    # 4. Final POS Launch (Called ONCE)
-    print(f"\nEnjoy your meal! Table {table_num} is ready.")
-    success = digitalpos.run_pos(table_num, guest_obj)
-    
-    if not success:
-        print(f"⚠️ POS session for Table {table_num} ended prematurely.")
-        
+
 if __name__ == "__main__":
     main() # Execute the script
