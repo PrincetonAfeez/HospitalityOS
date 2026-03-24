@@ -141,3 +141,20 @@ def run_pos(table_num: int, guest=None):
             active_server.clock_out()
             print("Table session cancelled. Returning to Front Desk.")
             return False
+
+def apply_tax_exemption(cart, manager_staff):
+    """
+    Commit 40: Manager-only flow to exempt a check from tax.
+    """
+    if not cart.guest:
+        print("❌ Error: No guest profile linked to this cart.")
+        return
+
+    print(f"Current Guest: {cart.guest.full_name}")
+    confirm = input("Verify Tax-Exempt ID and proceed? (y/n): ")
+    
+    if confirm.lower() == 'y':
+        cart.guest.toggle_tax_exempt()
+        print(f"✅ Tax removed. New Total: ${cart.grand_total}")
+    else:
+        print("Action cancelled.")

@@ -92,7 +92,8 @@ class Guest(Person):
         self.is_tax_exempt: bool = False
         self.party_size = max(1, int(party_size))
         self.is_seated = False
-        self.assigned_table = None 
+        self.assigned_table = None
+        self.is_tax_exempt = False # Default to False for everyone 
 
     def to_dict(self):
         return {
@@ -119,6 +120,17 @@ class Guest(Person):
         """Task 42: Math helper to apply percentages (e.g., 20% -> 0.8)."""
         discount = Decimal(str(percentage)) / 100 # Convert to decimal ratio
         return (Decimal("1.00") - discount) # Return the remaining multiplier
+
+    def toggle_tax_exempt(self) -> None:
+        """
+        Commit 40: Manual override for tax-exempt entities.
+        Requires verification of ID/Form at the table.
+        """
+        self.is_tax_exempt = not self.is_tax_exempt
+        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
+        print(f"Tax Exempt status for {self.full_name}: {status}")
+        # Log this for audit purposes (High-risk action)
+        SecurityLog.log_event("MANAGER_OVERRIDE", "TAX_EXEMPT_TOGGLE", f"Guest {self.guest_id} set to {status}")
 
 class Reservation:
     """
@@ -227,7 +239,7 @@ class Modifier:
 
 class MenuItem:
     """The granular data object for every SKU sold in the restaurant."""
-    def __init__(self, name, price, category, walk_in, freezer, par_level=10, line_inv=0):
+    def __init__(self, name, price, category, walk_in, freezer, par_level=10, line_inv=0, station="Kitchen"):
         self.category = category # Category for sales reporting (e.g., 'Liquor')
         self.name = name.strip() # The display name for the POS
         self.price = Decimal(str(price)) if Decimal(str(price)) > 0 else Decimal("0.00")
@@ -628,6 +640,17 @@ class Cart:
         """Calculates tax with a check for tax-exempt guest status."""
         if self.guest and getattr(self.guest, 'is_tax_exempt', False):
             return Decimal("0.00") # Return zero tax for exempt organizations
+        return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+    @property
+    def sales_tax(self) -> Decimal:
+        """
+        Commit 40: Conditional tax calculation.
+        Returns 0 if the associated guest is tax-exempt.
+        """
+        if self.guest and getattr(self.guest, 'is_tax_exempt', False):
+            return Decimal("0.00")
+        
         return (self.subtotal * self.tax_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     @property
