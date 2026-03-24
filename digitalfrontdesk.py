@@ -162,10 +162,10 @@ def get_resy_details():
             if item: # Prevent empty strings
                 allergies.append(item)
 
-    # 6. Instantiate the Guest Object
-    # Create a unique 4-character hex ID for the database/CRM
+    # 6. Instantiate the Guest Object (Unified)
     generated_id = f"GST-{str(uuid.uuid4())[:8].upper()}"
-    current_guest = Guest(generated_id, first_name, last_name, phone, allergies)
+    total = adults + children
+    current_guest = Guest(generated_id, first_name, last_name, phone, party_size=total, allergies=allergies)
 
     # 7. Persist guest record to CRM log
     guest_record = {
@@ -175,6 +175,7 @@ def get_resy_details():
         "allergies": current_guest.allergies,
         "loyalty_points": current_guest.loyalty_points,
         "is_tax_exempt": current_guest.is_tax_exempt,
+        "party_size": current_guest.party_size, # Added this
         "reservation_date": str(date),
         "reservation_time": str(resy_time)
     }
