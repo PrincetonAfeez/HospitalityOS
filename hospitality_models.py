@@ -1,17 +1,19 @@
 """
 HospitalityOS v4.0 - Guest & Floor Models
-Architect: Princeton Afeez
-Description: Handles the physical mapping of the restaurant. 
-             Manages seating, reservations, and guest loyalty data.
+Refactor: Integrated Pydantic and added Milestone/No-Show Tracking.
 """
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
-from typing import List, Optional, Dict
-# Assuming these exist in your core models
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, validator
+
+# Inheriting from our newly refactored Pydantic Person model
 from models import Person, SecurityLog
+# Use our thread-safe storage for the feedback logic
+from storage import save_to_json
 
 # ==============================================================================
 # GUEST & LOYALTY (PHASE 3: GUEST 360)
@@ -19,99 +21,76 @@ from models import Person, SecurityLog
 
 class Guest(Person):
     """
-    Represents a customer with deep preference tracking and 
-    automated loyalty tiering.
+    Enhanced Guest profile with Milestone alerts and Reliability tracking.
     """
-    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: str, party_size=2):
-        # Initialize the base Person attributes (names, email logic)
-        super().__init__(first_name, last_name) 
-        self.guest_id = guest_id      # Unique ID (Database Key)
-        self.phone = phone            # Primary contact for SMS alerts
-        self.party_size = int(party_size) 
-        
-        # --- PHASE 3: CRM DATA POINTS ---
-        self.loyalty_points = 0       # Current points balance
-        self.total_spent = Decimal("0.00") # Lifetime value (LTV)
-        self.allergies: List[str] = [] # Critical safety data
-        self.preferences: List[str] = [] # "Window seat", "Quiet table", etc.
-        self.is_vip = False           # Flag for high-spenders/regulars
-        
-        # --- STATUS FLAGS ---
-        self.is_tax_exempt = False 
-        self.is_seated = False 
-        self.assigned_table = None 
+    guest_id: str
+    phone: str
+    party_size: int = Field(default=2, ge=1)
+    
+    # --- CRM DATA POINTS (Commit 4) ---
+    loyalty_points: int = 0
+    total_spent: Decimal = Field(default=Decimal("0.00"))
+    allergies: List[str] = []
+    preferences: List[str] = []
+    is_vip: bool = False
+    
+    # New Milestone Fields
+    birthday: Optional[date] = None
+    anniversary: Optional[date] = None
+    
+    # New Reliability Tracking
+    no_show_count: int = Field(default=0, ge=0)
+    
+    # --- STATUS FLAGS ---
+    is_tax_exempt: bool = False 
+    is_seated: bool = False 
+    assigned_table: Optional[int] = None
+
+    @property
+    def is_frequent_noshow(self) -> bool:
+        """Requirement: Flag guests with 3+ no-shows for host alerts."""
+        return self.no_show_count >= 3
 
     def add_loyalty_points(self, bill_amount: Decimal):
-        """
-        Logic Gate: Awards 100 points per booking + 1 point per $10.
-        Automates VIP tagging based on spending thresholds ($1000+).
-        """
-        # Base points for showing up + points for spend
+        """Awards points and automates VIP tagging ($1000+)."""
         points_earned = 100 + int(bill_amount // 10)
         self.loyalty_points += points_earned
         self.total_spent += bill_amount
         
-        # PHASE 3 (D): Automated VIP Tagging
         if self.total_spent > 1000 and not self.is_vip:
             self.is_vip = True
-            print(f"🎊 STATUS UPGRADE: {self.full_name} is now a VIP!")
             
-        print(f"⭐ Loyalty: {self.full_name} earned {points_earned} pts. (Total: {self.loyalty_points})")
-
     def apply_loyalty_discount(self, bill_total: Decimal) -> Decimal:
-        """
-        Logic: Every 500 points = $10 discount.
-        Returns the new total after deducting points.
-        """
+        """Every 500 points = $10 discount."""
         if self.loyalty_points >= 500:
-            discount = Decimal("10.00")
             self.loyalty_points -= 500
-            print(f"🎟️ Loyalty Applied: $10.00 off for {self.full_name}.")
-            return max(Decimal("0.00"), bill_total - discount)
+            return max(Decimal("0.00"), bill_total - Decimal("10.00"))
         return bill_total
 
     def record_feedback(self, rating: int, comment: str):
-        """
-        PHASE 3 (B): Captures post-checkout experience to feedback.json.
-        """
+        """Captures post-checkout experience using thread-safe storage."""
         feedback_entry = {
             "timestamp": datetime.now().isoformat(),
             "guest_id": self.guest_id,
             "guest_name": self.full_name,
-            "rating": rating, # 1-5 Scale
+            "rating": rating,
             "comment": comment
         }
-        
-        path = "data/feedback.json"
-        existing_data = []
-        
-        # Load existing feedback to append
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                try:
-                    existing_data = json.load(f)
-                except json.JSONDecodeError:
-                    existing_data = []
-        
-        existing_data.append(feedback_entry)
-        with open(path, "w") as f:
-            json.dump(existing_data, f, indent=4)
-        print(f"💬 Feedback recorded for {self.full_name}.")
+        # Use the thread-safe save logic from Commit 3
+        save_to_json(feedback_entry, "data/feedback.json")
 
 # ==============================================================================
 # FLOOR & QUEUE MANAGEMENT
 # ==============================================================================
 
-class Table:
+class Table(BaseModel):
     """Represents a physical table in the dining room."""
-    def __init__(self, table_id: int, capacity: int):
-        self.table_id = table_id 
-        self.capacity = capacity 
-        self.status = "Available" # Available, Occupied, Dirty, Reserved
-        self.current_guest_id = None 
+    table_id: int
+    capacity: int
+    status: str = "Available" # Available, Occupied, Dirty, Reserved
+    current_guest_id: Optional[str] = None
 
     def seat_guest(self, guest: Guest):
-        """Seats a guest and updates their status flags."""
         if self.status == "Available" and guest.party_size <= self.capacity:
             self.status = "Occupied"
             self.current_guest_id = guest.guest_id
@@ -121,7 +100,6 @@ class Table:
         return False
 
     def clear_table(self):
-        """Preps table for the 'Dirty' cycle before it can be reused."""
         self.status = "Dirty"
         self.current_guest_id = None
 
