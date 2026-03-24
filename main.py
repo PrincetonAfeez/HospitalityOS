@@ -8,8 +8,11 @@ Description: The primary execution loop. Coordinates between the financial
 import sys
 import os
 import atexit
+import time
 from datetime import datetime
 from decimal import Decimal
+import digitalfrontdesk
+import laborcostauditor
 
 # --- INTERNAL MODULE IMPORTS ---
 # database.py handles CSV/JSON disk I/O
@@ -95,36 +98,53 @@ def system_bootstrap():
 # ==============================================================================
 
 def main_loop(user, menu, ledger, floor):
-    """Primary routing menu for the POS service."""
+    """
+    v4.0 Updated Operating Loop: 
+    Now coordinates across Front Desk, POS, and Labor modules.
+    """
+    # Initialize the waitlist for the session
+    waitlist = WaitlistManager() 
+
     while True:
         clear_screen()
-        # Header showing current user and daily sales progress
         print(f"👤 USER: {user.full_name} | 💰 TOTAL SALES: {format_currency(ledger.total_revenue)}")
         print("═"*45)
-        print(" [1] FLOOR MAP / SEATING")
-        print(" [2] OPEN TABLE / ORDERING")
-        print(" [3] WAITLIST MANAGEMENT")
-        print(" [4] END SHIFT / LOGOUT")
+        print(" [1] 🛋️  FRONT DESK (Seating & Reservations)") # UPDATED
+        print(" [2] 🍔 SERVICE FLOOR (Open Table / POS)")    # UPDATED
+        print(" [3] 📝 WAITLIST MANAGEMENT")
+        print(" [4] 📊 MANAGER OFFICE (Labor & Audit)")      # NEW
+        print(" [5] 🚪 END SHIFT / LOGOUT")
         print("═"*45)
         
         choice = input("Select Action > ").strip()
 
         if choice == "1":
-            # View table status (Available, Occupied, Dirty)
-            show_floor_status(floor)
+            # PHASE 4: Launch Digital Front Desk
+            # This handles party size, guest details, and seating
+            digitalfrontdesk.main_front_desk(floor, waitlist)
         
         elif choice == "2":
-            # Enter the ordering workflow for a specific table
+            # POS Workflow
             table_id = get_int("Table # (1-20): ", 1, 20)
             order_workflow(table_id, menu, ledger, user, floor)
 
         elif choice == "3":
-            # Placeholder for Waitlist logic (from hospitality_models)
-            print("Waitlist: Currently 0 parties waiting.")
-            input("Enter to return...")
+            # Waitlist Logic
+            print(f"\n--- ACTIVE WAITLIST ({len(waitlist.queue)} parties) ---")
+            for i, entry in enumerate(waitlist.queue, 1):
+                print(f"{i}. {entry.guest.full_name} (Party: {entry.party_size})")
+            input("\nPress Enter to return...")
 
         elif choice == "4":
-            # Exit logic including CA Labor confirmation
+            # PHASE 4: Launch Labor Auditor
+            # Only allow if the user is a 'Manager'
+            if user.role.upper() == "MANAGER":
+                laborcostauditor.main()
+            else:
+                print("⛔ ACCESS DENIED: Manager credentials required.")
+                time.sleep(2)
+
+        elif choice == "5":
             if finalize_session(user, menu, ledger):
                 break
 
