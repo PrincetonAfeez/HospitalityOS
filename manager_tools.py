@@ -12,6 +12,44 @@ from datetime import datetime
 from decimal import Decimal
 from models import SecurityLog, DailyLedger, Staff, MenuItem
 
+# ==========================================================================
+# SECURITY DECORATOR (Task 8)
+# ==========================================================================
+
+def require_manager_auth(func):
+    """
+    Intercepts sensitive functions to verify Manager credentials.
+    Ensures that high-risk actions (Z-Reports, Voids) are authorized.
+    """
+    @functools.wraps(func)
+    def wrapper(self, manager_id, *args, **kwargs):
+        # 1. Identify the staff member attempting the action
+        # We look for the staff object in the tool's internal staff_list
+        staff_member = next((s for s in self.staff_list if s.staff_id == manager_id), None)
+        
+        # 2. Check Role (Managers bypass the PIN prompt for their own tools)
+        if staff_member and staff_member.role.upper() == "MANAGER":
+            return func(self, manager_id, *args, **kwargs)
+        
+        # 3. Fallback: Request Manager PIN (Hardcoded 5555 for Phase 1)
+        print("\n" + "🔒" * 20)
+        print(f" SECURITY: AUTH REQUIRED FOR {func.__name__.upper()}")
+        print("🔒" * 20)
+        
+        pin = input("Enter Manager PIN to authorize: ")
+        if pin == "5555":
+            SecurityLog.log_event(manager_id, "OVERRIDE_GRANTED", f"Action: {func.__name__}")
+            return func(self, manager_id, *args, **kwargs)
+        else:
+            print("❌ ACCESS DENIED: Invalid Manager Credentials.")
+            return False
+            
+    return wrapper
+
+# ==========================================================================
+# MAIN TOOLSET
+# ==========================================================================
+
 class ManagerTools:
     """Consolidates all administrative and financial auditing functions."""
 
@@ -24,15 +62,16 @@ class ManagerTools:
     # FINANCIAL AUDITING (Z-REPORTS)
     # ==========================================================================
 
+    # --- PROTECTED ACTION ---
+    @require_manager_auth
     def generate_z_report(self, manager_id: str):
         """
         Performs the 'End of Day' close. Archives sales and resets the ledger.
         This is a permanent action that creates a timestamped JSON audit file.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M") # Sortable file timestamp
-        report_name = f"data/logs/Z_REPORT_{timestamp}.json" # Path to storage
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M") 
+        report_name = f"data/logs/Z_REPORT_{timestamp}.json" 
         
-        # Compile the financial snapshot
         report_data = {
             "business_date": datetime.now().strftime("%Y-%m-%d"),
             "closed_by": manager_id,
@@ -43,14 +82,11 @@ class ManagerTools:
         }
 
         try:
-            # Write the report to the logs folder
             with open(report_name, "w") as f:
                 json.dump(report_data, f, indent=4)
             
-            # Security Log: Record who performed the final close
             SecurityLog.log_event(manager_id, "Z_REPORT_GENERATED", f"Report: {report_name}")
             
-            # Reset the Singleton Ledger for the next business day
             self.ledger.total_revenue = Decimal("0.00")
             self.ledger.transaction_count = 0
             

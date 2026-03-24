@@ -15,9 +15,6 @@ from models import Person, SecurityLog
 # Use our thread-safe storage for the feedback logic
 from storage import save_to_json
 
-# In your main boot sequence or launcher
-waitlist = WaitlistManager()
-
 # ==============================================================================
 # GUEST & LOYALTY (PHASE 3: GUEST 360)
 # ==============================================================================
