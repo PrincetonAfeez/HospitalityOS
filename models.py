@@ -4,6 +4,7 @@ Description: This module defines the architectural blueprints for the system.
              It uses Decimal for financial precision and includes business 
              logic for inventory, tax, and California-compliant labor tracking.
 """
+import os
 import uuid # Standard library for generating unique, non-sequential transaction IDs
 import json # Used for serializing objects into the 'Shared Brain' JSON state
 import copy # Essential for deep-copying MenuItems to prevent shared state bugs in carts
@@ -185,6 +186,35 @@ class WaitlistManager:
     def remove_guest(self, guest_id: str):
         self.queue = [e for e in self.queue if e.guest.guest_id != guest_id]
 
+class FloorMap:
+    def __init__(self):
+        """
+        Commit 46: Initializing the FloorMap.
+        This pulls your table setup into a single manageable object.
+        """
+        self.tables: List[Table] = []
+        # Populate with your specific table count
+        for i in range(1, 11): # Example: Tables 1 through 10
+            self.tables.append(Table(i))
+
+    def restore_active_sessions(self):
+        """
+        The Boot Loader logic we wrote previously, 
+        now moved inside the class for better organization.
+        """
+        file_path = os.path.join(os.path.dirname(__file__), "active_tables.json")
+        if not os.path.exists(file_path):
+            return
+
+        with open(file_path, "r") as f:
+            saved_sessions = json.load(f)
+            for session in saved_sessions:
+                table = next((t for t in self.tables if t.table_id == session['table_id']), None)
+                if table:
+                    table.status = session['status']
+                    table.current_guest_id = session['guest_id']
+                    print(f"🔄 Restored Table {table.table_id}")
+                    
 class Table:
     """
     Commit 31: Physical Asset Model.
@@ -195,6 +225,7 @@ class Table:
         self.capacity = capacity
         self.status = "Available"  # Available, Occupied, Dirty, Reserved
         self.current_guest_id = None
+
 
     def seat_guest(self, guest_id: str):
         if self.status == "Available":
@@ -237,6 +268,30 @@ class Table:
         
         with open(file_path, "w") as f:
             json.dump(session_data, f, indent=4)
+
+    def restore_active_sessions(self, tables: List['Table']):
+        """
+        Commit 46: System Boot Loader.
+        Reads active_tables.json and restores guest-to-table assignments.
+        """
+        file_path = os.path.join(os.path.dirname(__file__), "active_tables.json")
+        
+        if not os.path.exists(file_path):
+            return  # No previous session to restore
+
+        try:
+            with open(file_path, "r") as f:
+                saved_sessions = json.load(f)
+            
+            for session in saved_sessions:
+                # Find the matching table object by ID
+                table = next((t for t in tables if t.table_id == session['table_id']), None)
+                if table:
+                    table.status = session['status']
+                    table.current_guest_id = session['guest_id']
+                    print(f"🔄 Restored: Table {table.table_id} is occupied by Guest {table.current_guest_id}")
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"⚠️ Could not restore sessions: {e}")
 
 # ==============================================================================
 # MENU & MODIFIER MODELS

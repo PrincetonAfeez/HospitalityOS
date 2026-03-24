@@ -27,7 +27,7 @@ from validator import (
 )
 from models import (
     Cart, ReceiptPrinter, Transaction, Staff, Menu, 
-    MenuEditor, AnalyticsEngine, InventoryManager, 
+    MenuEditor, AnalyticsEngine, InventoryManager, FloorMap,
     Modifier, InsufficientStockError, DailyLedger, AdminSession
 )
 from storage import save_to_json
@@ -68,6 +68,19 @@ def display_header(table_num, cart):
 # ==============================================================================
 # ADMINISTRATIVE & ANALYTICS UI
 # ==============================================================================
+
+# main.py / startup sequence
+def start_hospitality_os():
+    # 1. Initialize System Components
+    ledger = DailyLedger()
+    my_floor = FloorMap() # Creates the Table objects
+    
+    # 2. COMMIT 46: Boot Loader
+    print("🚀 Initializing Hospitality OS...")
+    my_floor.restore_active_sessions(my_floor.tables)
+    
+    # 3. Enter Main Menu Loop
+    # ... rest of your code ...
 
 def manager_menu(session: AdminSession, ledger: DailyLedger):
     """
