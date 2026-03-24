@@ -1,182 +1,165 @@
 """
-HospitalityOS v4.0 - Managerial Tools & Labor Auditor
-Architect: Princeton Afeez
-Description: Handles sensitive administrative tasks including Z-Reports, 
-             labor-to-sales ratios, and master inventory adjustments.
+HospitalityOS v4.0 - Managerial Tools
+Z-reports, labor snapshot helpers, reorder CSV — paths via PathManager.
 """
 
-import os
-import json
 import csv
+import functools
+import json
 from datetime import datetime
 from decimal import Decimal
-from models import SecurityLog, DailyLedger, Staff, MenuItem
-import functools
+from typing import Any, Callable, Optional, TypeVar
 
-# ==========================================================================
-# SECURITY DECORATOR (Task 8)
-# ==========================================================================
+from manager_auth import verify_manager_override
+from models import DailyLedger, MenuItem, SecurityLog, Staff
+from utils import PathManager, SECURITY_LOG_NAME
 
-def require_manager_auth(func):
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def require_manager_auth(func: F) -> F:
     """
-    Wraps sensitive functions to ensure only authorized managers can 
-    perform high-risk actions (Voids, Comps, Inventory Adjustments).
+    If first arg is ManagerTools, require PIN + manager ID from staff.csv.
+    If first arg is Staff and role is MANAGER, allow.
+    Otherwise Staff must present manager override.
     """
+
     @functools.wraps(func)
-    def wrapper(current_staff, *args, **kwargs):
-        # 1. Immediate bypass if the current staff member is already a Manager
-        if hasattr(current_staff, 'role') and current_staff.role.upper() == "MANAGER":
-            return func(current_staff, *args, **kwargs)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if not args:
+            return func(*args, **kwargs)
 
-        # 2. Trigger UI Security Prompt
-        print("\n" + "🔒" * 20)
-        print(f" SECURITY: {func.__name__.replace('_', ' ').upper()} REQUESTED")
-        print(" MANAGER AUTHORIZATION REQUIRED")
-        print("🔒" * 20)
-        
-        m_id = input("Manager Staff ID: ").strip()
-        m_pin = input("Manager PIN: ").strip()
+        first = args[0]
+        cls_name = getattr(first, "__class__", type(first)).__name__
 
-        # Phase 4 Validation (Hardcoded '5555' for this sprint)
-        if m_pin == "5555": 
-            # We record the intent now; Commit 11 will expand the logging details
-            print(f"✅ Override Granted for {m_id}.")
-            
-            # Pass the manager_id into the function context if needed
-            return func(current_staff, *args, **kwargs, authorized_by=m_id)
-        else:
-            print("❌ Access Denied: Invalid Manager Credentials.")
+        def prompt_and_verify() -> Optional[str]:
+            print("\n[!] SECURITY:", func.__name__.replace("_", " ").upper())
+            print("[!] MANAGER AUTHORIZATION REQUIRED")
+            m_id = input("Manager Staff ID: ").strip()
+            m_pin = input("Manager PIN: ").strip()
+            ok, msg = verify_manager_override(m_id, m_pin)
+            if not ok:
+                print(f"[X] {msg}")
+                return None
+            print(f"[OK] Override granted for {m_id}.")
+            return m_id
+
+        if cls_name == "ManagerTools":
+            m_id = prompt_and_verify()
+            if m_id is None:
+                return None
+            return func(*args, **kwargs, authorized_by=m_id)
+
+        current_staff = first
+        if hasattr(current_staff, "role") and str(current_staff.role).upper() == "MANAGER":
+            return func(*args, **kwargs)
+
+        m_id = prompt_and_verify()
+        if m_id is None:
             return None
-            
-    return wrapper
+        return func(*args, **kwargs, authorized_by=m_id)
 
-# ==========================================================================
-# MAIN TOOLSET
-# ==========================================================================
+    return wrapper  # type: ignore[return-value]
+
 
 class ManagerTools:
-    """Consolidates all administrative and financial auditing functions."""
+    """Administrative tasks bound to live ledger, menu, and staff roster."""
 
-    def __init__(self, ledger: DailyLedger, menu, staff_list: list[Staff]):
-        self.ledger = ledger # Reference to the live daily sales data
-        self.menu = menu # Reference to the master menu and inventory
-        self.staff_list = staff_list # List of all employees for labor auditing
+    def __init__(self, ledger: DailyLedger, menu: Any, staff_list: list[Staff]) -> None:
+        self.ledger = ledger
+        self.menu = menu
+        self.staff_list = staff_list
 
-    # ==========================================================================
-    # FINANCIAL AUDITING (Z-REPORTS)
-    # ==========================================================================
-
-    # --- PROTECTED ACTION ---
     @require_manager_auth
-    def generate_z_report(self, manager_id: str):
-        """
-        Performs the 'End of Day' close. Archives sales and resets the ledger.
-        This is a permanent action that creates a timestamped JSON audit file.
-        """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M") 
-        report_name = f"data/logs/Z_REPORT_{timestamp}.json" 
-        
+    def generate_z_report(self, manager_id: str, authorized_by: str = "SYSTEM") -> bool:
+        """Archive sales snapshot then reset ledger totals (training/demo close)."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        report_name = PathManager.get_path(f"Z_REPORT_{timestamp}.json")
+
         report_data = {
             "business_date": datetime.now().strftime("%Y-%m-%d"),
             "closed_by": manager_id,
+            "authorized_by": authorized_by,
             "total_net_sales": str(self.ledger.total_revenue),
+            "total_tips_pooled": str(self.ledger.total_tips),
             "transaction_count": self.ledger.transaction_count,
-            "average_check": str((self.ledger.total_revenue / self.ledger.transaction_count) 
-                                if self.ledger.transaction_count > 0 else 0)
+            "average_check": str(
+                (self.ledger.total_revenue / self.ledger.transaction_count)
+                if self.ledger.transaction_count > 0
+                else 0
+            ),
         }
 
         try:
-            with open(report_name, "w") as f:
-                json.dump(report_data, f, indent=4)
-            
+            with open(report_name, "w", encoding="utf-8") as fh:
+                json.dump(report_data, fh, indent=4)
+
             SecurityLog.log_event(manager_id, "Z_REPORT_GENERATED", f"Report: {report_name}")
-            
+
             self.ledger.total_revenue = Decimal("0.00")
+            self.ledger.total_tips = Decimal("0.00")
             self.ledger.transaction_count = 0
-            
-            print(f"✅ Z-Report archived successfully to {report_name}")
+
+            print(f"[OK] Z-Report archived to {report_name}")
             return True
-        except Exception as e:
-            print(f"❌ Critical Error during Z-Report: {e}")
+        except OSError as exc:
+            print(f"[X] Z-Report error: {exc}")
             return False
 
-    # ==========================================================================
-    # LABOR COST ANALYSIS (CA COMPLIANCE)
-    # ==========================================================================
-
-    def run_labor_audit(self):
-        """
-        Calculates total labor expense vs total sales to determine the 'Labor %'.
-        This is vital for staying profitable under California wage standards.
-        """
+    def run_labor_audit(self) -> None:
+        """TRAINING / DEMO — estimated labor vs sales (not legal payroll)."""
         total_labor_cost = Decimal("0.00")
-        
-        print("\n--- LIVE LABOR AUDIT ---")
+
+        print("\n--- LIVE LABOR AUDIT (training estimate) ---")
         for employee in self.staff_list:
-            # Check if employee has clocked out; if not, use current time for estimate
             if employee.shift_start and not employee.shift_end:
-                employee.shift_end = datetime.now() 
-                
+                employee.shift_end = datetime.now()
+
             shift_pay = employee.calculate_shift_pay()
             total_labor_cost += shift_pay
-            print(f"👤 {employee.full_name:<18} | Est. Pay: ${shift_pay:>7.2f}")
+            print(f"  {employee.full_name:<18} | Est. Pay: ${shift_pay:>7.2f}")
 
-        # Calculate the impact: (Labor / Sales) * 100
         sales = self.ledger.total_revenue
         labor_pct = (total_labor_cost / sales * 100) if sales > 0 else Decimal("0.00")
-        
+
         print("-" * 40)
-        print(f"💰 Total Sales: ${sales:>10.2f}")
-        print(f"👷 Total Labor: ${total_labor_cost:>10.2f}")
-        print(f"📊 Labor Impact: {labor_pct:>9.2f}%")
-        
-        # UX Alert: Most restaurants target under 30% labor
+        print(f"  Total Sales: ${sales:>10.2f}")
+        print(f"  Total Labor: ${total_labor_cost:>10.2f}")
+        print(f"  Labor %:     {labor_pct:>9.2f}%")
         if labor_pct > 30:
-            print("⚠️ ALERT: Labor costs are exceeding the 30% profitability threshold!")
+            print("[!] Labor above rough 30% demo threshold.")
         print("-" * 40)
 
-    # ==========================================================================
-    # INVENTORY MANAGEMENT
-    # ==========================================================================
+    def generate_reorder_csv(self) -> None:
+        """Items under line par -> morning_order.csv in logs folder."""
+        reorder_file = PathManager.get_path("morning_order.csv")
+        low_stock_items: list[list[Any]] = []
 
-    def generate_reorder_csv(self):
-        """
-        Scans 'Shared Brain' inventory levels and creates a CSV for the morning buyer.
-        Includes only items that have fallen below their Par levels.
-        """
-        reorder_file = "data/logs/morning_order.csv"
-        low_stock_items = []
-
-        # Iterate through the dictionary-based menu
         for item in self.menu.items.values():
             if item.line_inv < item.par_level:
                 qty_needed = item.par_level - item.line_inv
                 low_stock_items.append([item.name, item.category, item.line_inv, item.par_level, qty_needed])
 
         if not low_stock_items:
-            print("✅ All inventory levels are healthy. No order needed.")
+            print("[OK] All inventory levels at/above par.")
             return
 
-        # Write to a standard CSV format for Excel/Google Sheets compatibility
-        with open(reorder_file, "w", newline="") as f:
-            writer = csv.writer(f)
+        with open(reorder_file, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
             writer.writerow(["Item Name", "Category", "Current Stock", "Par Level", "Order Qty"])
             writer.writerows(low_stock_items)
 
-        print(f"📝 Reorder list generated: {len(low_stock_items)} items saved to {reorder_file}")
+        print(f"[*] Reorder CSV: {len(low_stock_items)} rows -> {reorder_file}")
 
-    # ==========================================================================
-    # SECURITY LOG VIEWER
-    # ==========================================================================
-
-    def view_recent_security_logs(self, limit=15):
-        """Reads the security log file and displays the most recent audit events."""
-        print(f"\n--- SECURITY AUDIT (Last {limit} events) ---")
+    def view_recent_security_logs(self, limit: int = 15) -> None:
+        """Tail the security log via PathManager."""
+        print(f"\n--- SECURITY AUDIT (last {limit}) ---")
+        path = PathManager.get_path(SECURITY_LOG_NAME)
         try:
-            with open("data/logs/security.log", "r") as f:
-                lines = f.readlines()
+            with open(path, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
                 for line in lines[-limit:]:
                     print(line.strip())
-        except FileNotFoundError:
-            print("No security logs found.")
+        except OSError:
+            print("No security log found.")
         print("-" * 45)
