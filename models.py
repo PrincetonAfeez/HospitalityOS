@@ -5,6 +5,7 @@ Description: This module defines the architectural blueprints for the system.
              logic for inventory, tax, and California-compliant labor tracking.
 """
 import os
+import re  # Used for regex validation in various methods (e.g., validating manager IDs for comps)
 import uuid # Standard library for generating unique, non-sequential transaction IDs
 import json # Used for serializing objects into the 'Shared Brain' JSON state
 import copy # Essential for deep-copying MenuItems to prevent shared state bugs in carts
@@ -1075,3 +1076,36 @@ class AdminSession:
         except FileNotFoundError:
             print("No security log found yet.")
         print("-" * 45)
+
+import re
+
+def generate_low_stock_report(menu_items):
+    """
+    Commit 49: Phase 2 - Item 8.
+    Uses RegEx to validate names and checks against 25% Par thresholds.
+    """
+    shopping_path = os.path.join(os.path.dirname(__file__), "shopping_list.txt")
+    low_stock_alerts = []
+    
+    # Simple RegEx to ensure item names are alphanumeric/spaces only
+    name_pattern = re.compile(r"^[a-zA-Z0-9\s]+$")
+
+    for item in menu_items:
+        # Validate name via RegEx
+        if not name_pattern.match(item.name):
+            continue
+            
+        total_inventory = item.line_inv + item.walk_in_inv + item.freezer_inv
+        
+        # Logic: Alert if stock is below 25% of the 'Par' value
+        if total_inventory < (item.par_level * 0.25):
+            alert_str = f"ORDER: {item.name} | Current: {total_inventory} | Par: {item.par_level}"
+            low_stock_alerts.append(alert_str)
+
+    # Prevent duplicates and write to file
+    with open(shopping_path, "w") as f:
+        f.write("--- AUTOMATED SHOPPING LIST ---\n")
+        for alert in sorted(set(low_stock_alerts)): # set() removes duplicates
+            f.write(f"{alert}\n")
+    
+    return len(low_stock_alerts)

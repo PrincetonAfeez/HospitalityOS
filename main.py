@@ -29,7 +29,7 @@ from models import (
     Cart, ReceiptPrinter, Transaction, Staff, Menu, 
     MenuEditor, AnalyticsEngine, InventoryManager, FloorMap,
     Modifier, InsufficientStockError, DailyLedger, AdminSession, 
-    validate_critical_files
+    validate_critical_files, generate_low_stock_report
 )
 from storage import save_to_json
 
@@ -80,7 +80,7 @@ def start_hospitality_os():
     ledger = DailyLedger()
     my_floor = FloorMap()
     my_floor.restore_active_sessions()
-    
+
 # main.py / startup sequence
 def start_hospitality_os():
     # 1. Initialize System Components
@@ -290,6 +290,19 @@ def main_loop():
             active_server.clock_out()
             save_system_state(menu, ledger.total_revenue)
             break
+    
+    # Inside your main loop (End Shift section)
+    print("Generating end-of-shift reports...")
+    items_to_order = generate_low_stock_report(my_menu.menu_items)
+    
+    report_count = generate_low_stock_report(my_menu.menu_items) 
+    print(f"Report generated: {report_count} items low.")
+    
+    if items_to_order > 0:
+        print(f"⚠️ {items_to_order} items are low! Check shopping_list.txt.")
+    else:
+        print("✅ Inventory levels are healthy.")
+
 
 if __name__ == "__main__":
     try:
