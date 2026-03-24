@@ -103,55 +103,53 @@ def find_best_table(floor_map, party_size):
     candidates.sort(key=lambda x: x.capacity)
     return candidates[0]
 
-def handle_arrival(guest_obj, adults, children, floor_map): # FIX: Accept floor_map
-    """
-    Handles physical arrival, table assignment, and hand-off to POS.
-    """
+def handle_arrival(guest_obj, adults, children, floor_map):
     print(f"\n--- Part B: Guest Arrival ---")
     print(f"Welcome back, {guest_obj.full_name}!")
     
-    # 1. Re-Verify Party Size (Common hospitality UX requirement)
+    # 1. Re-Verify Party Size
     if get_yes_no("Is the party size still the same? (y/n): "):
-        total_guests = adults + children # Use original reservation counts
+        total_guests = adults + children 
     else:
-        # Update counts if the party grew or shrunk
         new_adults = get_int("Updated adult count: ", min_val=1)
         new_kids = get_int("Updated children count: ", allow_zero=True)
         total_guests = new_adults + new_kids
     
-    # 2. Safety UX: Explicit alert for the server/kitchen
+    # 2. Safety UX
     if guest_obj.allergies:
         print(f"\n*** KITCHEN ALERT: {', '.join(guest_obj.allergies)} ***")
 
-    # 3. Table Assignment Logic
+    # 3. Table Assignment (Commit 34: Smart Logic)
+    table_num = None
+    
     if get_yes_no("Do you have a specific table preference? (y/n): "):
-        # Manual table selection (validated 1-99)
-        table_num = get_int("Enter Table Number (1-99): ", min_val=1, max_val=99)
-    else:
-        # Automated random assignment
-        table_num = random.randint(1, 99)
-        print(f"No problem, we have assigned you Table {table_num}.")
+        pref_id = get_int("Enter Table Number: ", min_val=1)
+        # Find that specific table in our map
+        match = next((t for t in floor_map if t.table_id == pref_id), None)
+        
+        if match and match.status == "Available" and match.capacity >= total_guests:
+            table_num = match.table_id
+            match.seat_guest(guest_obj.guest_id)
+        else:
+            print(f"⚠️ Table {pref_id} is unavailable or too small. Finding best alternative...")
 
-    # Commit 34: Smart Table Assignment
-    best_table = find_best_table(floor_map, total_guests)
-    
-    if best_table:
-        table_num = best_table.table_id
-        best_table.seat_guest(guest_obj.guest_id)
-        print(f"✅ Table {table_num} (Capacity: {best_table.capacity}) assigned.")
-    else:
-        print(f"❌ No available tables for a party of {total_guests}.")
-        # To be handled in Commit 35: Waitlist
-        return
+    # If no preference or preference failed, use Smart Seating
+    if not table_num:
+        best_table = find_best_table(floor_map, total_guests)
+        if best_table:
+            table_num = best_table.table_id
+            best_table.seat_guest(guest_obj.guest_id)
+            print(f"✅ Table {table_num} (Capacity: {best_table.capacity}) assigned.")
+        else:
+            print(f"❌ No available tables for {total_guests} guests.")
+            return # Waitlist logic (Commit 35) goes here
 
-    digitalpos.run_pos(table_num, guest_obj)
-    
-    print(f"\nEnjoy your meal! Table {table_num} is ready for {total_guests} guests.")
-
-    # 4. FINAL INTEGRATION: Launch the POS with the specific Table and Guest data
+    # 4. Final POS Launch (Called ONCE)
+    print(f"\nEnjoy your meal! Table {table_num} is ready.")
     success = digitalpos.run_pos(table_num, guest_obj)
-    if success is False:
-        print(f"⚠️  POS session for Table {table_num} ended without completing checkout.")
-
+    
+    if not success:
+        print(f"⚠️ POS session for Table {table_num} ended prematurely.")
+        
 if __name__ == "__main__":
     main() # Execute the script
