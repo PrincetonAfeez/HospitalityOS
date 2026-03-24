@@ -234,6 +234,37 @@ def close_restaurant_shift(manager_staff, ledger, floor_map):
     
     print("Shift close aborted.")
     return False
-    
+
+def handle_split_payment(cart, ledger):
+    """
+    Commit 37: UI Controller for splitting checks.
+    """
+    print("\n--- SPLIT CHECK INTERFACE ---")
+    print("1. Split Evenly (2-6 ways)")
+    print("2. Split by Items (Seat-based)")
+    choice = input("Select split type: ")
+
+    if choice == "1":
+        count = int(input("How many ways? "))
+        amounts = cart.split_evenly(count)
+        for i, amt in enumerate(amounts):
+            print(f"Payment {i+1}: ${amt}")
+            ledger.record_transaction(amt)
+        cart.items = [] # Clear original cart once all shares are "paid"
+
+    elif choice == "2":
+        while cart.items:
+            print("\nRemaining Items:")
+            for idx, item in enumerate(cart.items):
+                print(f"{idx}: {item.name} (${item.price})")
+            
+            indices = input("Enter item numbers for this sub-check (comma separated): ")
+            idx_list = [int(i.strip()) for i in indices.split(",")]
+            
+            sub_cart = cart.split_by_items(idx_list)
+            print(f"Sub-total for this guest: ${sub_cart.grand_total}")
+            ledger.record_transaction(sub_cart.grand_total)
+            # Repeat until cart.items is empty
+            
 if __name__ == "__main__":
     main() # Execute the script

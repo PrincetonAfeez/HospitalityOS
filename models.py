@@ -548,6 +548,37 @@ class Cart:
                 return True
         print(f"Item '{name}' not found in cart.")
         return False
+
+    def split_by_items(self, item_indices: List[int]) -> 'Cart':
+        """
+        Commit 37: Extracts specific items by index and returns a new Cart.
+        Useful for 'I'm paying for the appetizers and my drink' logic.
+        """
+        new_cart = Cart(guest=self.guest)
+        # Sort indices in reverse to prevent list shifting issues during removal
+        for index in sorted(item_indices, reverse=True):
+            if 0 <= index < len(self.items):
+                item = self.items.pop(index)
+                new_cart.items.append(item)
+        
+        return new_cart
+
+    def split_evenly(self, divisor: int) -> List[Decimal]:
+        """
+        Commit 37: Simple math split. Returns a list of totals.
+        Example: $100 total split 3 ways -> [33.34, 33.33, 33.33]
+        """
+        if divisor <= 0: return [self.grand_total]
+        
+        total = self.grand_total
+        share = (total / divisor).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        
+        shares = [share] * divisor
+        # Adjust for penny-rounding discrepancies
+        difference = total - sum(shares)
+        shares[0] += difference 
+        
+        return shares
     
     @property
     def subtotal(self) -> Decimal:
