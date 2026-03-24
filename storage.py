@@ -1,70 +1,67 @@
 """
-HospitalityOS v4.0 - Storage Engine
-Refactor: Combined Atomic File Swapping with Threading Locks for 100% Data Integrity.
+Atomic JSON writes with optional merge-into-array semantics (e.g. feedback.json).
+merge_array replaces fragile substring checks on filenames.
 """
 
 import json
+import logging
 import os
 import threading
 from typing import Any, Optional
 
-# --- GLOBAL LOCK ---
-# Prevents multiple threads from accessing the filesystem simultaneously
+LOG = logging.getLogger(__name__)
 _io_lock = threading.Lock()
 
-def save_to_json(data: Any, filename: str) -> bool:
+
+def save_to_json(data: Any, filename: str, *, merge_array: bool = False) -> bool:
     """
-    Thread-safe & Atomic write operation.
-    Uses a Lock to prevent race conditions and os.replace to prevent corruption.
+    Write JSON atomically via temp file + os.replace.
+    If merge_array=True, load existing root list (if any), append `data`, save combined list.
     """
     temp_filename = f"{filename}.tmp"
-    
-    with _io_lock: # Ensure only one thread enters this block
+
+    with _io_lock:
         try:
-            # 1. Prepare the data payload (Existing Log logic)
-            payload = data
-            if "log" in filename:
-                logs = []
+            payload: Any = data
+            if merge_array:
+                logs: list = []
                 if os.path.exists(filename):
-                    with open(filename, "r", encoding="utf-8") as f:
+                    with open(filename, "r", encoding="utf-8") as fh:
                         try:
-                            logs = json.load(f)
-                            if not isinstance(logs, list): logs = [logs]
+                            logs = json.load(fh)
+                            if not isinstance(logs, list):
+                                logs = [logs]
                         except json.JSONDecodeError:
                             logs = []
                 logs.append(data)
                 payload = logs
 
-            # 2. Write to a temporary file (Atomic Safety)
-            # Check for Pydantic model conversion
-            with open(temp_filename, "w", encoding="utf-8") as f:
+            with open(temp_filename, "w", encoding="utf-8") as fh:
                 if hasattr(payload, "model_dump"):
-                    json.dump(payload.model_dump(), f, indent=4, default=str)
+                    json.dump(payload.model_dump(), fh, indent=4, default=str)
                 else:
-                    json.dump(payload, f, indent=4, default=str)
+                    json.dump(payload, fh, indent=4, default=str)
 
-            # 3. OS-level atomic swap
             os.replace(temp_filename, filename)
             return True
 
-        except Exception as e:
+        except OSError as exc:
             if os.path.exists(temp_filename):
                 os.remove(temp_filename)
-            print(f"❌ Storage Error for {filename}: {e}")
+            LOG.error("Storage error for %s: %s", filename, exc)
+            print(f"[X] Storage Error for {filename}: {exc}")
             return False
 
+
 def load_from_json(file_path: str) -> Optional[Any]:
-    """
-    Thread-safe read operation.
-    """
-    with _io_lock: # Prevent reading while another thread is mid-swap
+    """Thread-safe read; returns None if missing or corrupt."""
+    with _io_lock:
         try:
             if not os.path.exists(file_path):
                 return None
-                
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-                
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"⚠️ Load Error: Could not read {file_path}. (Error: {e})")
+            with open(file_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except (json.JSONDecodeError, OSError) as exc:
+            LOG.warning("Load failed %s: %s", file_path, exc)
+            print(f"[!] Load Error: Could not read {file_path}. ({exc})")
             return None
