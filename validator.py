@@ -1,128 +1,152 @@
 """
 HospitalityOS v4.0 - Input Validation Utility
-Architect: Princeton Afeez
-Description: The 'System Firewall.' Acts as a mandatory filter for all 
-             user inputs to prevent data corruption, floating-point 
-             errors, and logic crashes across all modules.
+---------------------------------------------
+Central place for input() loops so every module shares the same rules for
+IDs, money, dates, and y/n prompts — fewer crashes from bad typing.
 """
 
-from decimal import Decimal, InvalidOperation # Critical for exact monetary math
-from pydantic import BaseModel, ValidationError # For schema validation in health checks
-from hospitality_models import Guest # To validate guest data structures during health checks
+from datetime import date, datetime, time  # Calendar math used by FOH and labor tools
+from decimal import Decimal, InvalidOperation  # Money must stay out of binary floats
+from typing import Any, List, Optional, Type  # Health-check helper typing
 
-def get_staff_id(prompt):
-    """
-    Pattern Validation: Enforces the 'EMP-XX' corporate naming convention.
-    Ensures database keys for staff remain consistent and searchable.
-    """
+from pydantic import BaseModel, ValidationError  # Optional batch validation against models
+
+
+def get_staff_id(prompt: str) -> str:
+    """Loop until input resembles EMP-01 style IDs used in staff.csv."""
     while True:
-        # Normalize input to uppercase to match the 'EMP-' standard regardless of user shift-key usage
         entry = input(prompt).strip().upper()
-        # Logic: Must start with prefix and contain at least one character after the hyphen
         if entry.startswith("EMP-") and len(entry) >= 5:
             return entry
         print("⚠️  INVALID FORMAT: Staff IDs must start with 'EMP-' (e.g., EMP-01)")
 
-def get_int(prompt, min_val=0, max_val=None):
-    """
-    Numeric Sanitization: Converts string inputs to integers with boundary enforcement.
-    Prevents 'ValueError' crashes when a user accidentally types a letter.
-    """
+
+def get_int(prompt: str, min_val: int = 0, max_val: Optional[int] = None) -> int:
+    """Parse int; optionally clamp to min/max inclusive."""
     while True:
         try:
-            # Attempt to cast the raw string input to a whole number
             val = int(input(prompt))
-            # Logic: If boundaries are provided, ensure val sits between min and max
-            if (min_val is not None and val < min_val) or (max_val is not None and val > max_val):
-                range_msg = f"between {min_val} and {max_val}" if max_val else f"at least {min_val}"
-                print(f"⚠️  OUT OF RANGE: Please enter a number {range_msg}.")
+            too_low = min_val is not None and val < min_val
+            too_high = max_val is not None and val > max_val
+            if too_low or too_high:
+                label = f"between {min_val} and {max_val}" if max_val is not None else f"at least {min_val}"
+                print(f"⚠️  OUT OF RANGE: Please enter a number {label}.")
                 continue
-            return val # Return validated integer to the calling module
+            return val
         except ValueError:
-            # Triggered if the input cannot be mathematically converted to an int
             print("⚠️  DATA TYPE ERROR: Please enter a whole number (no decimals or letters).")
 
-def get_decimal_input(prompt, allow_negative=False):
-    """
-    Financial Precision: Forces monetary inputs into a Decimal object.
-    Replaces float math (0.1 + 0.2 != 0.3) with precise base-10 arithmetic.
-    """
+
+def get_decimal_input(prompt: str, allow_negative: bool = False) -> Decimal:
+    """Return Decimal for dollars; strip $ and commas first."""
     while True:
-        # Sanitization: Strip currency symbols that users often type by habit
         entry = input(prompt).replace("$", "").replace(",", "").strip()
         try:
             val = Decimal(entry)
-            # Logic Guard: Unless specifically allowed, money shouldn't be negative
             if not allow_negative and val < 0:
                 print("⚠️  VALUE ERROR: Financial entries cannot be negative.")
                 continue
             return val
         except (InvalidOperation, ValueError):
-            # Triggered if the string contains multiple decimals or non-numeric characters
             print("⚠️  CURRENCY ERROR: Enter a valid price format (e.g., 15.50).")
 
-def get_name(prompt):
-    """
-    Text Integrity: Ensures names are descriptive and non-empty.
-    Prevents the creation of 'Ghost' items or guests with empty strings as IDs.
-    """
+
+def get_float(prompt: str, min_val: Optional[float] = None) -> float:
+    """Labor auditor helper: quick float with optional floor check."""
     while True:
-        # Strip leading/trailing whitespace which can break O(1) dictionary lookups
+        try:
+            val = float(input(prompt).strip().replace(",", ""))
+            if min_val is not None and val < min_val:
+                print(f"⚠️ Enter a value of at least {min_val}.")
+                continue
+            return val
+        except ValueError:
+            print("⚠️ Enter a valid decimal number.")
+
+
+def get_name(prompt: str) -> str:
+    """Require at least two characters and refuse pure digit 'names'."""
+    while True:
         entry = input(prompt).strip()
-        # Logic: Name must be longer than 1 char and not be a disguised number
         if len(entry) > 1 and not entry.isdigit():
             return entry
         print("⚠️  NAME ERROR: Please enter a valid name (at least 2 letters).")
 
-def get_yes_no(prompt):
-    """
-    Boolean Logic Gate: Standardizes binary choices (y/n) across the OS.
-    Reduces code duplication in 'if/else' decision trees.
-    """
+
+def get_email(prompt: str) -> str:
+    """Minimal sanity check: one @ and a dot after it (not RFC-perfect)."""
     while True:
-        # Case-insensitive check for user flexibility
         entry = input(prompt).strip().lower()
-        if entry in ['y', 'yes', 'true', '1']:
+        if "@" in entry:
+            domain = entry.split("@", 1)[1]
+            if "." in domain and len(domain) > 2:
+                return entry
+        print("⚠️  EMAIL ERROR: Expect name@domain.com style addresses.")
+
+
+def get_yes_no(prompt: str) -> bool:
+    """Normalize many truthy/falsey words to a strict bool."""
+    while True:
+        entry = input(prompt).strip().lower()
+        if entry in ("y", "yes", "true", "1"):
             return True
-        if entry in ['n', 'no', 'false', '0']:
+        if entry in ("n", "no", "false", "0"):
             return False
         print("⚠️  CHOICE ERROR: Please respond with 'y' or 'n'.")
 
-def format_currency(amount):
-    """
-    UX Display Logic: Formats numbers into human-readable currency strings.
-    Ensures consistent visual reporting in the GM Dashboard and Receipts.
-    """
-    # Formatting: Adds a '$', commas for thousands, and forces 2 decimal places
-    return f"${float(amount):,.2f}"
 
-def get_verified_high_value(prompt, threshold=100):
-    """
-    NEW FEATURE: Double-verification for high-risk data entries.
-    Triggered when a manager enters a value that significantly impacts the P&L.
-    """
+def parse_date_string(raw: str) -> Optional[date]:
+    """Return date for MM/DD/YYYY or None if the string does not match."""
+    try:
+        return datetime.strptime(raw.strip(), "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def get_date(prompt: str) -> date:
+    """Keep asking until parse_date_string succeeds (shared with tests)."""
+    while True:
+        parsed = parse_date_string(input(prompt).strip())
+        if parsed:
+            return parsed
+        print("⚠️  DATE ERROR: Use MM/DD/YYYY.")
+
+
+def get_time(prompt: str) -> time:
+    """Parse a few human patterns into datetime.time for shift audits."""
+    formats = ("%H:%M", "%I:%M %p", "%I:%M%p", "%H%M")
+    while True:
+        raw = input(prompt).strip()
+        for fmt in formats:
+            try:
+                return datetime.strptime(raw, fmt).time()
+            except ValueError:
+                continue
+        print("⚠️  TIME ERROR: Try 16:30, 4:30 PM, or 1630.")
+
+
+def format_currency(amount: Any) -> str:
+    """Pretty money string without turning Decimals into noisy floats."""
+    quantized = Decimal(str(amount)).quantize(Decimal("0.01"))
+    return f"${quantized:,.2f}"
+
+
+def get_verified_high_value(prompt: str, threshold: int = 100) -> int:
+    """Ask twice when a big integer could be a typo."""
     val = get_int(prompt)
-    if val >= threshold:
-        # Defensive Programming: Force the user to consciously acknowledge the high number
-        if not get_yes_no(f"  🚩 ALERT: {val} is a high value. Is this correct? (y/n): "):
-            return get_verified_high_value(prompt, threshold) # Recursive retry
+    if val >= threshold and not get_yes_no(f"  🚩 ALERT: {val} is a high value. Is this correct? (y/n): "):
+        return get_verified_high_value(prompt, threshold)
     return val
 
-def run_system_health_check(data_list, model_class):
-    """
-    Commit 12: Uses Pydantic to verify that saved JSON matches our schemas.
-    """
-    validated_items = []
+
+def run_system_health_check(data_list: List[dict], model_class: Type[BaseModel]) -> List[BaseModel]:
+    """Instantiate model_class per dict row; skip rows that fail ValidationError."""
+    validated: List[BaseModel] = []
     print(f"🔍 Running Health Check on {model_class.__name__}...")
-    
     for entry in data_list:
         try:
-            # This line does the heavy lifting: it checks types, lengths, and values
-            obj = model_class(**entry)
-            validated_items.append(obj)
-        except ValidationError as e:
-            print(f"❌ DATA CORRUPTION DETECTED: {e.json()}")
-            # In a real system, you might move corrupt files to a quarantine folder
-            
-    print(f"✅ Cleaned {len(validated_items)} records.")
-    return validated_items
+            validated.append(model_class(**entry))
+        except ValidationError as exc:
+            print(f"❌ DATA CORRUPTION DETECTED: {exc}")
+    print(f"✅ Cleaned {len(validated)} records.")
+    return validated
