@@ -10,7 +10,7 @@ import copy # Essential for deep-copying MenuItems to prevent shared state bugs 
 from datetime import datetime # Core utility for timestamping sales and clock-ins
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation # Industry standard for financial rounding precision
 from typing import List, Optional
-from digitalfrontdesk import Table, Guest, Reservation
+
 
 # Try-Except block to handle missing settings during initial environment setup
 try:
@@ -23,7 +23,7 @@ except ImportError:
 # Type Hinting: Prevents circular imports while allowing IDE autocompletion
 from typing import TYPE_CHECKING, List, Optional
 if TYPE_CHECKING:
-    from digitalfrontdesk import Guest
+    from digitalfrontdesk import Guest # Only for type hints, not actual code execution
 
 # ==============================================================================
 # BASE EXCEPTIONS & SECURITY MODELS
@@ -58,23 +58,115 @@ class SecurityLog:
             print(f"[SECURITY WARNING] Audit trail could not be written: {e}")
         print(f"[SECURITY] Event Logged: {action}") # Real-time console feedback
 
+
+class Person:
+    """Abstract base class to handle common identity logic (DRY Principle)."""
+    def __init__(self, first_name: str, last_name: str):
+        self.first_name = first_name.strip().title() # Auto-correct casing
+        self.last_name = last_name.strip().title() # Auto-correct casing
+
+    @property
+    def full_name(self):
+        """Convenience property for printing receipts and employee badges."""
+        return f"{self.first_name} {self.last_name}"
+    
+# ==============================================================================
+# GUEST MODEL (Domain: Front Desk)
+# ==============================================================================
+      
+class Guest(Person):
+    """
+    Requirement 7-8, 40, 42: Guest Identity Logic.
+    Centralized here to keep the core models.py focused on Staff and Inventory.
+    """
+    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: int, party_size=2, allergies: list[str] = None) -> None:
+        # Initialize the 'Person' base class (Commit 1 logic)
+        super().__init__(first_name, last_name)
+        
+        self.guest_id: str = guest_id 
+        self.phone: int = phone 
+        self.allergies: list[str] = allergies if allergies else [] 
+        self.loyalty_points: int = 0 
+        self.is_tax_exempt: bool = False
+        self.party_size = max(1, int(party_size))
+        self.is_seated = False
+        self.assigned_table = None 
+
+    def to_dict(self):
+        return {
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "phone": self.phone,
+            "party_size": self.party_size,
+            "is_seated": self.is_seated
+        }
+        
+    def add_loyalty_points(self, bill_subtotal: Decimal) -> None:
+        """Task 8: Award 1 point per $10 of spend using floor division."""
+        points_earned = int(bill_subtotal // 10)
+        self.loyalty_points += points_earned
+        print(f"⭐ Loyalty: {self.full_name} earned {points_earned} points.")
+
+    def toggle_tax_exempt(self) -> None:
+        """Task 40: Manual override for tax-exempt entities."""
+        self.is_tax_exempt = not self.is_tax_exempt
+        status = "ENABLED" if self.is_tax_exempt else "DISABLED"
+        print(f"Tax Exempt status for {self.full_name}: {status}")
+
+    def get_discount_multiplier(self, percentage):
+        """Task 42: Math helper to apply percentages (e.g., 20% -> 0.8)."""
+        discount = Decimal(str(percentage)) / 100 # Convert to decimal ratio
+        return (Decimal("1.00") - discount) # Return the remaining multiplier
+
+class Reservation:
+    """
+    Commit 33: The Reservation Engine.
+    Links a guest to a future time slot.
+    """
+    def __init__(self, guest: Guest, res_date, res_time, table_id=None):
+        self.guest = guest
+        self.res_date = res_date # datetime.date object
+        self.res_time = res_time # datetime.time object
+        self.table_id = table_id # Assigned at booking or arrival
+        self.is_confirmed = True
+
+    def __repr__(self):
+        return f"Res: {self.guest.last_name} | {self.res_date} @ {self.res_time}"
+
 class Table:
+    """
+    Commit 31: Physical Asset Model.
+    Tracks seating capacity and real-time availability.
+    """
     def __init__(self, table_id: int, capacity: int):
         self.table_id = table_id
         self.capacity = capacity
-        self.status = "Available"
+        self.status = "Available"  # Available, Occupied, Dirty, Reserved
         self.current_guest_id = None
 
-class Guest(Person):
-    def __init__(self, guest_id: str, first_name: str, last_name: str, phone: int, party_size=2, allergies=None):
-        super().__init__(first_name, last_name)
-        self.guest_id = guest_id
-        self.phone = phone
-        self.party_size = party_size
-        self.allergies = allergies if allergies else []
-        self.loyalty_points = 0
-        self.is_tax_exempt = False
-        
+    def seat_guest(self, guest_id: str):
+        if self.status == "Available":
+            self.status = "Occupied"
+            self.current_guest_id = guest_id
+            return True
+        return False
+
+    def clear_table(self):
+        """Transition to Dirty after a guest leaves."""
+        self.status = "Dirty"
+        self.current_guest_id = None
+
+    def to_dict(self):
+        return {
+            "table_id": self.table_id,
+            "capacity": self.capacity,
+            "status": self.status,
+            "guest_id": self.current_guest_id
+        }
+    
+    def __repr__(self):
+        return f"Table {self.table_id} ({self.capacity}-top)"
+
 # ==============================================================================
 # MENU & MODIFIER MODELS
 # ==============================================================================
@@ -219,17 +311,6 @@ class Menu:
 # ==============================================================================
 # LABOR & STAFF MODELS
 # ==============================================================================
-
-class Person:
-    """Abstract base class to handle common identity logic (DRY Principle)."""
-    def __init__(self, first_name: str, last_name: str):
-        self.first_name = first_name.strip().title() # Auto-correct casing
-        self.last_name = last_name.strip().title() # Auto-correct casing
-
-    @property
-    def full_name(self):
-        """Convenience property for printing receipts and employee badges."""
-        return f"{self.first_name} {self.last_name}"
 
 class Staff(Person):
     """Represents an employee with CA labor-compliant payroll logic."""
@@ -391,11 +472,17 @@ class Cart:
         Only adds if item is active and line_inv > 0.
         """
         if not item.is_active or item.line_inv <= 0:
-            print(f"❌ Cannot add {item.name}: Out of Stock.")
+            raise InsufficientStockError(f"86 ALERT: ❌ Cannot add {item.name}: Out of Stock.")
             return False
         
         self.items.append(item)
         return True
+       
+        cloned_item = item.clone() # Create a private copy of the MenuItem
+        self.items.append(cloned_item) # Add the copy to the cart
+        item.line_inv -= 1 # Deduct from the master menu inventory
+        item.units_sold += 1 # Track sales volume on the master item for analytics
+
 
     def calculate_total(self) -> Decimal:
         """Updated to use your Decimal tax_rate logic."""
@@ -422,16 +509,6 @@ class Cart:
             
         self.items = [] 
         return True
-    
-    def add_to_cart(self, item: MenuItem):
-        """Validates inventory and clones the item to prevent 'Shared State' bugs."""
-        if item.line_inv <= 0:
-            raise InsufficientStockError(f"86 ALERT: {item.name} is out of stock!")
-        
-        cloned_item = item.clone() # Create a private copy of the MenuItem
-        self.items.append(cloned_item) # Add the copy to the cart
-        item.line_inv -= 1 # Deduct from the master menu inventory
-        item.units_sold += 1 # Track sales volume on the master item for analytics
 
     def void_item(self, name: str, staff=None, reason: str = "") -> bool:
         """Removes the first matching item from the cart and logs the action."""
