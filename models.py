@@ -249,9 +249,56 @@ class Staff(Person):
 class Cart:
     """The temporary holding area for an active table order."""
     def __init__(self, guest=None):
-        self.items: List[MenuItem] = [] # Active items in the cart
-        self.guest = guest # Reference to the Guest object (if seated)
-        self.tax_rate = Decimal(str(TAX_RATE)) # Global tax constant
+        """
+        Commit 16 (Merged): Preserves guest and tax logic 
+        while preparing for atomic stock validation.
+        """
+        self.items: List[MenuItem] = [] 
+        self.guest = guest 
+        self.tax_rate = Decimal(str(TAX_RATE))
+        self.is_finalized = False # Useful for Phase 3 (Payments)
+
+    def add_item(self, item: MenuItem) -> bool:
+        """
+        Commit 16: Pre-flight stock check.
+        Only adds if item is active and line_inv > 0.
+        """
+        if not item.is_active or item.line_inv <= 0:
+            print(f"❌ Cannot add {item.name}: Out of Stock.")
+            return False
+        
+        self.items.append(item)
+        return True
+
+    def calculate_total(self) -> Decimal:
+        """Updated to use your Decimal tax_rate logic."""
+        subtotal = sum(item.price for item in self.items)
+        return Decimal(str(subtotal)) * (1 + self.tax_rate)
+
+    def checkout(self) -> bool:
+        """
+        Commit 16: Atomic Checkout.
+        Deducts inventory and clears cart in one movement.
+        """
+        if not self.items:
+            return False
+            
+        for item in self.items:
+            item.line_inv -= 1
+            item.units_sold += 1
+            
+        self.items = [] 
+        return True
+    
+    def add_to_cart(self, item: MenuItem):
+        """Validates inventory and clones the item to prevent 'Shared State' bugs."""
+        if item.line_inv <= 0:
+            raise InsufficientStockError(f"86 ALERT: {item.name} is out of stock!")
+        
+        cloned_item = item.clone() # Create a private copy of the MenuItem
+        self.items.append(cloned_item) # Add the copy to the cart
+        item.line_inv -= 1 # Deduct from the master menu inventory
+        item.units_sold += 1 # Track sales volume on the master item for analytics
 
     def void_item(self, name: str, staff=None, reason: str = "") -> bool:
         """Removes the first matching item from the cart and logs the action."""
@@ -264,17 +311,7 @@ class Cart:
                 return True
         print(f"Item '{name}' not found in cart.")
         return False
-
-    def add_to_cart(self, item: MenuItem):
-        """Validates inventory and clones the item to prevent 'Shared State' bugs."""
-        if item.line_inv <= 0:
-            raise InsufficientStockError(f"86 ALERT: {item.name} is out of stock!")
-        
-        cloned_item = item.clone() # Create a private copy of the MenuItem
-        self.items.append(cloned_item) # Add the copy to the cart
-        item.line_inv -= 1 # Deduct from the master menu inventory
-        item.units_sold += 1 # Track sales volume on the master item for analytics
-
+    
     @property
     def subtotal(self) -> Decimal:
         """Aggregates prices of all items plus their nested modifiers."""
