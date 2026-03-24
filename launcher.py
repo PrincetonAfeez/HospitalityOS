@@ -10,6 +10,11 @@ import time
 import sys
 from datetime import datetime
 
+from HospitalityOS.hospitality_models import WaitlistManager
+
+# In your main boot sequence or launcher
+waitlist = WaitlistManager()
+
 def render_splash():
     """
     Renders the ASCII Art logo and system versioning. 

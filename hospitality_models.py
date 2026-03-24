@@ -15,6 +15,9 @@ from models import Person, SecurityLog
 # Use our thread-safe storage for the feedback logic
 from storage import save_to_json
 
+# In your main boot sequence or launcher
+waitlist = WaitlistManager()
+
 # ==============================================================================
 # GUEST & LOYALTY (PHASE 3: GUEST 360)
 # ==============================================================================
@@ -139,3 +142,54 @@ class FloorMap:
                                 g.assigned_table = table.table_id
                 except json.JSONDecodeError:
                     print("⚠️ Error: active_tables.json is corrupt. Starting with empty floor.")
+
+                    """
+HospitalityOS v4.0 - Waitlist Logic
+Requirement: Task 4 - Automated No-Show tagging and queue management.
+"""
+
+class WaitlistEntry(BaseModel):
+    """Represents a single party waiting for a table."""
+    guest: Guest
+    party_size: int
+    entry_time: datetime = Field(default_factory=datetime.now)
+
+class WaitlistManager(BaseModel):
+    """The master controller for the FOH queue."""
+    queue: List[WaitlistEntry] = []
+
+    def add_to_wait(self, guest: Guest):
+        """Adds a guest to the digital queue."""
+        entry = WaitlistEntry(guest=guest, party_size=guest.party_size)
+        self.queue.append(entry)
+        print(f"📝 {guest.full_name} added to waitlist (Position: {len(self.queue)})")
+
+    def seat_from_waitlist(self, guest_id: str, table: Any):
+        """Standard flow: Guest arrived and is being seated."""
+        for entry in self.queue:
+            if entry.guest.guest_id == guest_id:
+                table.seat_guest(entry.guest)
+                self.queue.remove(entry)
+                return True
+        return False
+
+    def mark_as_no_show(self, guest_id: str):
+        """
+        TASK 4: Increments the guest's no-show counter and removes them.
+        This triggers the 'is_frequent_noshow' alert in DigitalFrontDesk.
+        """
+        for entry in self.queue:
+            if entry.guest.guest_id == guest_id:
+                # 1. Update the counter on the Guest object
+                entry.guest.no_show_count += 1
+                
+                # 2. Log for security audit
+                SecurityLog.log_event("FRONT_DESK", "NO_SHOW_RECORDED", 
+                                     f"Guest {entry.guest.full_name} missed their slot. Total: {entry.guest.no_show_count}")
+                
+                print(f"⚠️ {entry.guest.full_name} marked as No-Show. Total misses: {entry.guest.no_show_count}")
+                
+                # 3. Remove from active queue
+                self.queue.remove(entry)
+                return True
+        return False
