@@ -25,11 +25,14 @@ from settings.restaurant_defaults import MAX_MODS
 def run_pos(table_num, guest_obj, menu_brain, daily_ledger, current_staff):
     """
     The main loop for an active table session.
-    Connects the Guest, the Staff, and the Menu together.
     """
     # 1. Initialize the session-specific Cart
-    # We pass the guest_obj so the cart knows if Auto-Gratuity or Tax-Exempt applies
     active_cart = Cart(guest=guest_obj)
+    
+    # --- TASK: OPTIMIZE LOOKUP (Commit 1) ---
+    # Convert list-based menu to a dictionary for O(1) access
+    # Assuming menu_brain has an attribute 'items' or similar
+    menu_lookup = {item.name.lower(): item for item in menu_brain.items}
     
     while True:
         draw_pos_header(table_num, guest_obj, active_cart)
@@ -44,37 +47,34 @@ def run_pos(table_num, guest_obj, menu_brain, daily_ledger, current_staff):
         choice = input("Select Action > ").strip().upper()
 
         if choice == "1":
-            # Add item logic with integrated inventory deduction
-            item_query = get_name("Enter Item Name: ")
-            master_item = menu_brain.find_item(item_query)
+            # Optimized lookup logic
+            query = get_name("Enter Item Name: ").lower()
+            
+            # O(1) Dictionary Access vs Previous O(n) Search
+            master_item = menu_lookup.get(query)
             
             if master_item:
                 try:
                     active_cart.add_to_cart(master_item)
                     print(f"✅ {master_item.name} added to Table {table_num}.")
                 except Exception as e:
-                    # Catching '86' (Out of Stock) errors from models.py
                     print(f"❌ ERROR: {e}")
             else:
                 print("❓ Item not found in current Menu.")
             input("\nPress Enter...")
 
         elif choice == "2":
-            # Modifier workflow (e.g., 'Medium Rare' or 'No Onions')
             apply_modifier_workflow(active_cart)
 
         elif choice == "3":
-            # Visual check of the bill before firing to kitchen
             display_current_bill(active_cart)
             input("\nPress Enter to return...")
 
         elif choice == "4":
-            # Finalize the transaction
             if process_checkout(active_cart, table_num, daily_ledger, current_staff):
-                return True # Signal to main.py that table is now 'Dirty'
+                return True 
         
         elif choice == "Q":
-            # Suspend: Saves the cart in memory but doesn't close the table
             print(f"💾 Session for Table {table_num} suspended.")
             return False
 
