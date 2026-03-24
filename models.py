@@ -174,6 +174,30 @@ class Menu:
         """Commit 15: Helper to return only items currently for sale."""
         return [i for i in self.items.values() if i.is_active]
 
+    def validate_integrity(self):
+        """
+        Commit 30: Database Integrity Check.
+        Scans all loaded items for logical errors and repairs them.
+        Returns a count of repairs made.
+        """
+        repairs = 0
+        for item in self.items.values():
+            # Rule 1: Inventory cannot be below zero
+            if item.line_inv < 0:
+                item.line_inv = 0
+                repairs += 1
+            
+            # Rule 2: Prices must be Decimal and non-negative
+            if not isinstance(item.price, Decimal) or item.price < 0:
+                item.price = Decimal("0.00")
+                repairs += 1
+                
+        if repairs > 0:
+            print(f"🛠️ Integrity Check: {repairs} data points repaired for stability.")
+        else:
+            print("✅ Integrity Check: Data healthy.")
+        return repairs
+    
 # ==============================================================================
 # LABOR & STAFF MODELS
 # ==============================================================================

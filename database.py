@@ -6,6 +6,8 @@ import csv
 import os
 import re
 from decimal import Decimal
+from HospitalityOS import menu
+from restaurant import menu
 from storage import load_from_json, save_to_json
 from datetime import datetime
 from models import Menu, MenuItem, Ledger, Staff  # Ensure Ledger is included here
@@ -81,6 +83,9 @@ def load_system_state():
     for item_data in data.get("menu_snapshot", []):
         menu.add_item(MenuItem.from_dict(item_data))
 
+    # Inside load_system_state after rebuilding the menu:
+    menu.validate_integrity()
+    
     # 2. Rebuild Ledger
     saved_revenue = Decimal(data.get("net_sales", "0.00"))
     saved_count = data.get("transaction_count", 0)
