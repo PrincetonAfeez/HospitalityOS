@@ -274,6 +274,22 @@ class Ledger:
             "average_check": float(self.total_revenue / self.transaction_count) if self.transaction_count > 0 else 0
         }
     
+    def print_daily_summary(self):
+        """
+        Commit 20: Console-based Manager Report.
+        """
+        print("\n" + "="*30)
+        print("   HOSPITALITY OS: SHIFT REPORT   ")
+        print("="*30)
+        print(f"Total Revenue:   ${self.total_revenue:>10.2f}")
+        print(f"Transactions:    {self.transaction_count:>10}")
+        
+        if self.transaction_count > 0:
+            avg = self.total_revenue / self.transaction_count
+            print(f"Avg. Check:      ${avg:>10.2f}")
+        
+        print("="*30 + "\n")
+        
 class Cart:
     """The temporary holding area for an active table order."""
     def __init__(self, guest=None):
@@ -309,12 +325,23 @@ class Cart:
         Deducts inventory and clears cart in one movement.
         """
         if not self.items:
+            print("⚠️ Checkout failed: Cart is empty.")
             return False
             
+        # 1. Calculate the final hit to the wallet
+        final_total = self.calculate_total()
+        
+        # 2. Update the Ledger
+        Ledger.record_transaction(final_total)
+        
+        # 3. Deduct Stock & Update Stats
         for item in self.items:
             item.line_inv -= 1
             item.units_sold += 1
             
+        print(f"✅ Transaction Complete: {final_total} added to Ledger.")
+        
+        # 4. Reset Cart
         self.items = [] 
         return True
     
