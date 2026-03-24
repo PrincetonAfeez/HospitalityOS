@@ -6,11 +6,10 @@ import csv
 import os
 import re
 from decimal import Decimal
-
-# Import the new utility
-from utils import PathManager 
-from models import Menu, MenuItem, Staff
 from storage import load_from_json, save_to_json
+from datetime import datetime
+from models import Menu, MenuItem, Ledger, Staff  # Ensure Ledger is included here
+from utils import PathManager
 
 # ==============================================================================
 # INTEGRITY & STARTUP
@@ -64,30 +63,36 @@ def load_menu_from_csv(filename):
 
 def load_system_state():
     """
-    Commit 19: Full Refactor of initialize_system_state.
-    Now rehydrates both the Menu and the Ledger from restaurant_state.json.
+    Commit 19 (Refined): Rehydrates Menu, Ledger, and Staff.
     """
     state_path = PathManager.get_path("restaurant_state.json")
     data = load_from_json(state_path)
     
-    # If no file exists, return fresh instances
+    # Initialize fresh instances in case no file exists
+    menu = Menu()
+    ledger = Ledger()
+    staff_members = [] # Or a StaffManager() if you have one
+
     if not data:
         print("ℹ️ No previous state found. Starting fresh.")
-        return Menu(), Ledger()
+        return menu, ledger, staff_members
 
-    # 1. Rebuild the Menu
-    menu = Menu()
+    # 1. Rebuild Menu
     for item_data in data.get("menu_snapshot", []):
         menu.add_item(MenuItem.from_dict(item_data))
 
-    # 2. Rebuild the Ledger (The new part!)
+    # 2. Rebuild Ledger
     saved_revenue = Decimal(data.get("net_sales", "0.00"))
     saved_count = data.get("transaction_count", 0)
-    
     ledger = Ledger(initial_revenue=saved_revenue, initial_count=saved_count)
     
-    print(f"✅ Recovery Complete: ${saved_revenue} restored to Ledger.")
-    return menu, ledger
+    # 3. Rebuild Staff (Assuming you have a Staff.from_dict method)
+    for staff_data in data.get("staff_snapshot", []):
+        # Change 'Staff' to your actual class name if different
+        staff_members.append(Staff.from_dict(staff_data))
+
+    print(f"✅ System Restored: {len(staff_members)} staff members synced.")
+    return menu, ledger, staff_members
 
 
 def save_system_state(menu, ledger):
