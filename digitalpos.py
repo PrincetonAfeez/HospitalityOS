@@ -8,6 +8,7 @@ Description: The primary interface used by servers at the table.
 import os
 from decimal import Decimal
 from datetime import datetime
+from manager_tools import require_manager_auth
 
 # --- INTERNAL MODULE IMPORTS ---
 from validator import (
@@ -189,3 +190,38 @@ def process_checkout(cart, table_num, ledger, staff):
         return True
     
     return False
+
+@require_manager_auth
+def void_item(current_staff, cart, item_index, authorized_by="N/A"):
+    """
+    Commit 10: Removes a specific item from the cart.
+    Requirement: Must be intercepted by Manager Override.
+    """
+    if 0 <= item_index < len(cart.items):
+        item = cart.items.pop(item_index)
+        
+        # We will expand this log in Commit 11
+        print(f"🗑️ VOID: {item.name} removed from bill by {authorized_by}.")
+        return True
+    return False
+
+@require_manager_auth
+def comp_entire_table(current_staff, cart, authorized_by="N/A"):
+    """
+    Commit 10: Discounts the entire bill to $0.00 (Complimentary).
+    Requirement: High-risk action; requires Manager PIN.
+    """
+    print(f"🎁 COMP: Entire table authorized for 100% discount by {authorized_by}.")
+    cart.items = [] # Clears the bill
+    return True
+
+@require_manager_auth
+def manual_inventory_adjust(current_staff, item, new_amount, authorized_by="N/A"):
+    """
+    Commit 10: Manually overrides the 'Shared Brain' inventory levels.
+    Requirement: Prevents unauthorized stock tampering.
+    """
+    old_val = item.line_inv
+    item.line_inv = new_amount
+    print(f"📦 INV: {item.name} adjusted from {old_val} to {new_amount} by {authorized_by}.")
+    return True
