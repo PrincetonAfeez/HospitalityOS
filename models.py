@@ -924,6 +924,21 @@ class InventoryManager:
                 })
         return prep_list # Return actionable data for the chef
 
+    def get_86_list(self) -> List[str]:
+        """
+        Commit 48: Phase 2 - Item C.
+        Identifies items with zero total inventory across line, walk-in, and freezer.
+        """
+        out_of_stock = []
+        for item in self.menu_items: # Assuming menu_items is your list of MenuItem objects
+            total_qty = item.line_inv + item.walk_in_inv + item.freezer_inv
+            
+            if total_qty <= 0:
+                item.is_active = False # Flip the safety switch
+                out_of_stock.append(item.name)
+        
+        return out_of_stock
+
 # ==============================================================================
 # RECEIPT, ADMIN & ANALYTICS MODELS
 # ==============================================================================

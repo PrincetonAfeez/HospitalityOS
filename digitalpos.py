@@ -143,6 +143,26 @@ def run_pos(table_num: int, guest=None):
             print("Table session cancelled. Returning to Front Desk.")
             return False
 
+def add_item_to_cart_secure(cart, item_name, menu):
+    """
+    Commit 48: Secure adding logic.
+    Prevents 86'd items from being added to new orders.
+    """
+    # 1. Check if the item is on the 86 list
+    if item_name in menu.get_86_list():
+        print(f"🚫 ERROR: {item_name} is 86'd (Out of Stock)!")
+        return False
+
+    # 2. Proceed with adding if stock exists
+    item = menu.get_item_by_name(item_name)
+    if item and item.line_inv > 0:
+        cart.add_item(item)
+        item.line_inv -= 1 # Real-time decrement
+        return True
+    
+    print(f"❌ {item_name} is unavailable on the line.")
+    return False
+    
 def apply_tax_exemption(cart, manager_staff):
     """
     Commit 40: Manager-only flow to exempt a check from tax.
