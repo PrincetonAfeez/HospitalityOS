@@ -1,293 +1,156 @@
 """
-Project: Hospitality OS - Digital Front Desk (v3.0)
-Description: This script manages the Front-of-House (FOH) guest experience. 
-             It handles the intake of new reservations, calculates party sizes,
-             and bridges the data gap to the POS system.
+HospitalityOS v4.0 - Digital Front Desk
+Architect: Princeton Afeez
+Description: Manages the Front-of-House (FOH) intake. Handles reservations, 
+             party size calculations, and the transition of guests to the POS.
 """
 
-import random # Used for automated table assignment if no preference is given
-import uuid   # Used to generate a unique 4-character Guest ID for CRM tracking
+import uuid   # Used to generate unique 8-character Guest IDs for CRM tracking
 import digitalpos # Integration with the POS engine to transition guests to a table
-from decimal import Decimal # Ensuring financial precision for loyalty calculations
-from validator import get_name, get_email, get_int, get_date, get_time, get_yes_no
-from storage import save_to_json  # Guest persistence
+from decimal import Decimal # Ensuring financial precision for loyalty/tax logic
+from datetime import datetime
 
-from models import (
-    Person,
-    Guest, 
-    Table, 
-    WaitlistManager,
-    Reservation, 
-    SecurityLog, 
-    InsufficientStockError
+# --- INTERNAL MODULE IMPORTS ---
+from validator import (
+    get_name, get_email, get_int, get_date, get_time, get_yes_no
 )
+from database import save_system_state # Persistence trigger
+from hospitality_models import (
+    Guest, Table, FloorMap, WaitlistManager
+)
+from models import SecurityLog, DailyLedger
 
 # ==============================================================================
 # MAIN ENGINE & LOGIC
 # ==============================================================================
 
-def main():
+def main_front_desk(floor: FloorMap, waitlist: WaitlistManager):
     """
     The central coordinator. Orchestrates the flow from 
-    Reservation (Part A) to Arrival (Part B).
+    Reservation (Intake) to Arrival (Seating).
     """
-    print("\n--- Part A: Reservation InTake ---\n")
+    print("\n" + "═"*45)
+    print(f"║ {'GUEST INTAKE & RESERVATIONS' :^41} ║")
+    print("═"*45)
     
-    # Define your actual dining room layout
-    floor_map = [Table(101, 2), Table(102, 2), Table(201, 4), Table(202, 4), Table(301, 8)]
-    guest_obj, adults, kids = get_resy_details()
-    # FIX: Pass floor_map here
-    handle_arrival(guest_obj, adults, kids, floor_map)
+    # 1. Gather Guest Data
+    guest_obj = collect_guest_details()
+    
+    # 2. Transition to Seating Workflow
+    handle_arrival(guest_obj, floor, waitlist)
 
-def get_resy_details():
+def collect_guest_details():
     """
     UX: Collects and validates all guest information.
-    Creates and returns a formal Guest object + party counts.
+    Returns a hydrated Guest object ready for seating.
     """
-    print("--- MyRestaurant Reservation System ---")
+    print("\n--- NEW RESERVATION ---")
     
-    # 1. Collect Basic Identity Information
-    first_name = get_name("First Name: ") # Validates string length
-    last_name = get_name("Last Name: ")   # Validates string length
-    email = get_email("Email Address: ")  # Validates '@' and '.'
+    # 1. Collect Identity Information via the 'Input Shield' (validator.py)
+    first_name = get_name("First Name: ") 
+    last_name = get_name("Last Name: ")   
+    email = get_email("Email Address: ")  
     
-    # 2. Collect Contact Info (Must be exactly 10 digits)
-    phone = get_int("Mobile (10 digits): ", exact_len=10)
+    # 2. Collect Contact Info (Must be exactly 10 digits for SMS notifications)
+    phone = str(get_int("Mobile Number (10 digits): ", min_val=1000000000, max_val=9999999999))
     
-    # 3. Collect Party Context (Not stored in the permanent Guest profile)
+    # 3. Collect Party Context
     adults = get_int("Number of Adults: ", min_val=1)
-    children = get_int("Number of Children: ", allow_zero=True)
+    children = get_int("Number of Children: ", min_val=0)
+    total_party = adults + children
     
-    # 4. Scheduling Data (Validated against business hours)
-    date = get_date("Reservation Date (e.g., Oct 12th): ")
-    resy_time = get_time("Reservation Time: ", start_hour=11, end_hour=21)
+    # 4. Scheduling (Validated against business hours/dates)
+    res_date = get_date("Date (MM/DD/YYYY): ")
+    res_time = get_time("Time (11:00-21:00): ")
     
     # 5. Allergy Logic: Multi-item list builder
     allergies = []
-    if get_yes_no("Are there any food allergies for this party? (y/n): "):
-        print("Enter allergies one by one (type 'done' when finished):")
+    if get_yes_no("Does this party have food allergies? (y/n): "):
+        print("Enter allergies one-by-one (Type 'DONE' to finish):")
         while True:
-            item = input("> ").strip().title() # Standardize to Title Case
-            if item.lower() == "done": # Break condition
-                break
-            if item: # Prevent empty strings
-                allergies.append(item)
+            item = input("> ").strip().title()
+            if item.upper() == "DONE": break
+            if item: allergies.append(item)
 
-    # 6. Instantiate the Guest Object (Unified)
+    # 6. Instantiate the Unified Guest Object
+    # Use uuid to ensure every guest is unique even with the same name
     generated_id = f"GST-{str(uuid.uuid4())[:8].upper()}"
-    total = adults + children
-    current_guest = Guest(generated_id, first_name, last_name, phone, party_size=total, allergies=allergies)
+    new_guest = Guest(generated_id, first_name, last_name, phone, party_size=total_party)
+    new_guest.allergies = allergies # Add the extra context
+    
+    print(f"✅ Reservation created for {new_guest.full_name} ({total_party} pax).")
+    return new_guest
 
-    # 7. Persist guest record to CRM log
-    guest_record = {
-        "guest_id": current_guest.guest_id,
-        "name": current_guest.full_name,
-        "phone": current_guest.phone,
-        "allergies": current_guest.allergies,
-        "loyalty_points": current_guest.loyalty_points,
-        "is_tax_exempt": current_guest.is_tax_exempt,
-        "party_size": current_guest.party_size, # Added this
-        "reservation_date": str(date),
-        "reservation_time": str(resy_time)
-    }
-    save_to_json(guest_record, "guest_log.json")
-
-    total = adults + children
-    current_guest = Guest(generated_id, first_name, last_name, phone, party_size=total, allergies=allergies)
-
-    # 8. Confirmation UX
-    print(f"\n--- Reservation Confirmed ---")
-    print(f"Guest: {current_guest.full_name} | ID: {current_guest.guest_id}")
-    print(f"Date: {date} at {resy_time}")
-
-    # Returning the full object plus temporary party counts
-    return current_guest, adults, children
-
-def find_best_table(floor_map, party_size):
-    """Finds the smallest available table that fits the party."""
-    candidates = [t for t in floor_map if t.status == "Available" and t.capacity >= party_size]
+def find_best_table(floor: FloorMap, party_size: int) -> Table:
+    """
+    Algorithm: Finds the 'Best Fit' table.
+    Prioritizes available tables that match the party size perfectly to save 
+    larger tables for larger parties.
+    """
+    # Filter for available tables that can fit the party
+    candidates = [t for t in floor.tables if t.status == "Available" and t.capacity >= party_size]
+    
     if not candidates:
-        return None
+        return None # No room available
+    
+    # Sort by capacity so we use the smallest sufficient table first
     candidates.sort(key=lambda x: x.capacity)
     return candidates[0]
 
-# Initialize a global or session-based waitlist manager
-active_waitlist = WaitlistManager()
-
-def clear_and_reassign(table: 'Table', floor_map, waitlist: WaitlistManager):
+def handle_arrival(guest_obj: Guest, floor: FloorMap, waitlist: WaitlistManager):
     """
-    Called when a guest checks out. Clears the table and 
-    immediately checks if anyone on the waitlist fits.
+    Handles the physical seating of the guest or waitlist fallback.
     """
-    table.clear_table() # Status becomes 'Dirty'
-    print(f"🧹 Table {table.table_id} is being bussed...")
+    print(f"\n--- SEATING: {guest_obj.full_name.upper()} ---")
     
-    # Simulate bussing time or manual clear
-    table.status = "Available"
-    
-    # Check if someone waiting can take this table
-    next_party = waitlist.get_next_fit(table.capacity)
-    if next_party:
-        print(f"🔔 NOTIFICATION: Table {table.table_id} is ready for {next_party.guest.full_name}!")
-        next_party.is_notified = True
-        waitlist.remove_guest(next_party.guest.guest_id)
-
-def handle_arrival(guest_obj, adults, children, floor_map):
-    # ... (previous verification and allergy logic) ...
-    total_guests = adults + children
-    
-    # [Rest of Table Assignment Logic]
-    assigned_table = find_best_table(floor_map, total_guests)
+    # Attempt to find a table
+    assigned_table = find_best_table(floor, guest_obj.party_size)
 
     if assigned_table:
-        # 1. Update the Table Object
-        # This calls the method in models.py to set status to 'Occupied'
+        # 1. Update the Table State
         assigned_table.seat_guest(guest_obj.guest_id)
         
-        # Commit 45: Persistence Trigger
-        # floor_map is your list of Table objects
-        from models import save_table_session
-        save_table_session(floor_map) 
-        
-        print(f"✅ Session persisted to active_tables.json")
-        
-        # 2. Update the Guest Object
-        # Links the Guest to the table for receipt/service tracking
+        # 2. Update the Guest State
         guest_obj.is_seated = True
         guest_obj.assigned_table = assigned_table.table_id
         
-        table_num = assigned_table.table_id
-        print(f"✅ Table {table_num} (Capacity: {assigned_table.capacity}) assigned.")
-        print(f"Server Alert: {guest_obj.full_name} is now seated at Table {table_num}.")
-        
         # 3. Security Audit
-        # Records who sat the guest and where (Objective 4 compliance)
-        SecurityLog.log_event("HOST_STATION", "GUEST_SEATED", f"Guest: {guest_obj.guest_id} -> Table: {table_num}")
-
-        # 4. Launch POS
-        print(f"\nEnjoy your meal! Table {table_num} is ready.")
-        success = digitalpos.run_pos(table_num, guest_obj)
+        SecurityLog.log_event("HOST_STATION", "GUEST_SEATED", 
+                             f"Guest {guest_obj.guest_id} seated at Table {assigned_table.table_id}")
         
-        if not success:
-             print(f"⚠️ POS session for Table {table_num} ended without checkout.")
+        print(f"✅ Table {assigned_table.table_id} assigned (Capacity: {assigned_table.capacity}).")
+        
+        # 4. POS Hand-off
+        # Transitions the control to the ordering engine
+        if get_yes_no("Launch POS for this table now? (y/n): "):
+            digitalpos.run_pos(assigned_table.table_id, guest_obj)
+            
     else:
-        # ... (Waitlist logic we discussed previously) ...
-        print(f"❌ No available tables for {total_guests} guests.")
+        # FALLBACK: Join the Waitlist if no tables match
+        print(f"❌ SORRY: No tables available for a party of {guest_obj.party_size}.")
         if get_yes_no("Would you like to join the waitlist? (y/n): "):
-            active_waitlist.add_to_waitlist(guest_obj, total_guests)
-        
-        # Commit 35: Waitlist Fallback
-        if get_yes_no("Would you like to join the waitlist? (y/n): "):
-            active_waitlist.add_to_waitlist(guest_obj, total_guests)
-            print("We will notify you as soon as a table opens up.")
-        else:
-            print("Understood. Have a wonderful day!")
-    
+            waitlist.add_to_wait(guest_obj, guest_obj.party_size)
+            print("📝 You will be notified when a table opens.")
 
-def run_shift_close(manager_staff, daily_ledger, floor_map):
+# ==============================================================================
+# KITCHEN & SERVICE UTILITIES
+# ==============================================================================
+
+def fire_to_kitchen(cart, table_num):
     """
-    Commit 36: Standardized Close-out Procedure.
-    1. Check for open tables.
-    2. Print final stats.
-    3. Archive data.
-    4. Reset Ledger.
-    """
-    print(f"\n{'='*40}")
-    print(f"{'SHIFT CLOSE INITIATED':^40}")
-    print(f"{'='*40}")
-
-    # 1. Validation: Ensure no guests are still seated
-    open_tables = [t for t in floor_map if t.status == "Occupied"]
-    if open_tables:
-        print(f"⚠️  ABORT: Table(s) {', '.join(str(t.table_id) for t in open_tables)} are still occupied!")
-        return False
-
-    # 2. Print Summary for Manager review
-    avg = daily_ledger.total_revenue / daily_ledger.transaction_count if daily_ledger.transaction_count > 0 else 0
-    print(f"Final Revenue:  ${daily_ledger.total_revenue:.2f}")
-    print(f"Total Sales:    {daily_ledger.transaction_count}")
-    print(f"Avg. Check:     ${avg:.2f}")
-
-    # 3. Archive and Reset
-    if get_yes_no("Proceed with Final Z-Report and Archive? (y/n): "):
-        success = daily_ledger.archive_shift_data(manager_staff.staff_id)
-        if success:
-            daily_ledger.reset() # Clears the singleton for tomorrow
-            print("\n✅ Shift closed successfully. Data archived.")
-            return True
-    
-    print("\n❌ Shift close cancelled.")
-    return False
-
-def close_restaurant_shift(manager_staff, ledger, floor_map):
-    """The 'End of Day' procedure."""
-    print("\n--- INITIATING SHIFT CLOSE-OUT ---")
-    
-    # 1. Check for 'Ghost Guests' (Unpaid tables)
-    open_tables = [t for t in floor_map if t.status == "Occupied"]
-    if open_tables:
-        print("🛑 ERROR: Cannot close shift. The following tables are still occupied:")
-        for t in open_tables:
-            print(f"  - Table {t.table_id}")
-        return False
-
-    # 2. Final Archive
-    confirm = input("Confirm Z-Report and Revenue Reset? (y/n): ").lower()
-    if confirm == 'y':
-        if ledger.archive_shift_data(manager_staff.staff_id):
-            ledger.reset() # Using the reset method we built in Commit 30
-            print("✅ Shift data archived. Ledger reset to $0.00.")
-            SecurityLog.log_event(manager_staff.staff_id, "SYSTEM_RESET", "Day ended successfully.")
-            return True
-    
-    print("Shift close aborted.")
-    return False
-
-def handle_split_payment(cart, ledger):
-    """
-    Commit 37: UI Controller for splitting checks.
-    """
-    print("\n--- SPLIT CHECK INTERFACE ---")
-    print("1. Split Evenly (2-6 ways)")
-    print("2. Split by Items (Seat-based)")
-    choice = input("Select split type: ")
-
-    if choice == "1":
-        count = int(input("How many ways? "))
-        amounts = cart.split_evenly(count)
-        for i, amt in enumerate(amounts):
-            print(f"Payment {i+1}: ${amt}")
-            ledger.record_transaction(amt)
-        cart.items = [] # Clear original cart once all shares are "paid"
-
-    elif choice == "2":
-        while cart.items:
-            print("\nRemaining Items:")
-            for idx, item in enumerate(cart.items):
-                print(f"{idx}: {item.name} (${item.price})")
-            
-            indices = input("Enter item numbers for this sub-check (comma separated): ")
-            idx_list = [int(i.strip()) for i in indices.split(",")]
-            
-            sub_cart = cart.split_by_items(idx_list)
-            print(f"Sub-total for this guest: ${sub_cart.grand_total}")
-            ledger.record_transaction(sub_cart.grand_total)
-            # Repeat until cart.items is empty
-            
-def finalize_order_to_kitchen(cart, table_num, kds):
-    """
-    Commit 38: The 'Fire' command.
-    Sends items to KDS and prepares the cart for the next round of drinks/food.
+    The 'Fire' command: Sends orders to the KDS (Kitchen Display System).
     """
     if not cart.items:
-        print("❌ Cannot fire an empty order.")
-        return
+        print("⚠️ Order is empty. Nothing to fire.")
+        return False
 
-    kds.route_order(cart, table_num)
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"\n🍳 KITCHEN TICKET GENERATED [{timestamp}]")
+    print(f"TABLE: {table_num}")
+    for item in cart.items:
+        mods = f" ({', '.join([m.name for m in item.modifiers])})" if item.modifiers else ""
+        print(f" > {item.name}{mods}")
     
-    # Optional: Mark items as 'fired' so they aren't sent twice
-    # For now, we assume the cart is cleared for 'rounds' of service
-    print(f"✅ Order fired for Table {table_num}.")            
-
-if __name__ == "__main__":
-    main() # Execute the script
+    # In a full system, this would push to a 'data/kitchen_queue.json'
+    print("✅ Order successfully sent to station printers.")
+    return True
