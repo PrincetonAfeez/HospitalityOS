@@ -57,6 +57,37 @@ class SecurityLog:
             print(f"[SECURITY WARNING] Audit trail could not be written: {e}")
         print(f"[SECURITY] Event Logged: {action}") # Real-time console feedback
 
+class Table:
+    """
+    Commit 31: Physical Asset Model.
+    Tracks seating capacity and real-time availability.
+    """
+    def __init__(self, table_id: int, capacity: int):
+        self.table_id = table_id
+        self.capacity = capacity
+        self.status = "Available"  # Available, Occupied, Dirty, Reserved
+        self.current_guest_id = None
+
+    def seat_guest(self, guest_id: str):
+        if self.status == "Available":
+            self.status = "Occupied"
+            self.current_guest_id = guest_id
+            return True
+        return False
+
+    def clear_table(self):
+        """Transition to Dirty after a guest leaves."""
+        self.status = "Dirty"
+        self.current_guest_id = None
+
+    def to_dict(self):
+        return {
+            "table_id": self.table_id,
+            "capacity": self.capacity,
+            "status": self.status,
+            "guest_id": self.current_guest_id
+        }
+    
 # ==============================================================================
 # MENU & MODIFIER MODELS
 # ==============================================================================
