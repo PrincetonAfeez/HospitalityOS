@@ -332,23 +332,19 @@ class DailyLedger:
         self.transaction_count += 1
 
 class InventoryManager:
-    """Business Intelligence tool to identify prep needs and stock gaps."""
-    def __init__(self, menu: Menu):
-        self.menu = menu # Link to the master menu
-
+    """Commit 7: Update loop to handle dictionary-based menu."""
     def get_prep_list(self):
-        """Compares current stock against Par Levels to generate a 'To-Do' list."""
         prep_list = []
-        for item in self.menu.items:
+        # Changed from 'for item in self.menu.items'
+        for item in self.menu.items.values():
             if not item.is_active:
                 continue
             if item.line_inv < item.par_level:
                 prep_list.append({
                     "name": item.name,
-                    "need": item.par_level - item.line_inv # Calculate discrepancy
+                    "need": item.par_level - item.line_inv
                 })
         return prep_list # Return actionable data for the chef
-
 
 # ==============================================================================
 # RECEIPT, ADMIN & ANALYTICS MODELS
@@ -418,13 +414,16 @@ class AnalyticsEngine:
         self.menu = menu
 
     def get_top_performing_items(self, n: int = 5) -> List[MenuItem]:
-        """Returns the top N active items sorted by actual units sold this session."""
-        active = [i for i in self.menu.items if i.is_active]
+        # Changed from 'self.menu.items' to 'self.menu.items.values()'
+        active = [i for i in self.menu.items.values() if i.is_active]
         return sorted(active, key=lambda x: x.units_sold, reverse=True)[:n]
 
     def get_reorder_list(self) -> List[MenuItem]:
-        """Returns items whose line inventory has fallen below par level."""
-        return [i for i in self.menu.items if i.line_inv < i.par_level]
+        # Changed to dictionary values
+        return [i for i in self.menu.items.values() if i.line_inv < i.par_level]
+
+# Also update MenuEditor's loops if any exist, but it primarily 
+# uses find_item(), which we already fixed in Commit 5.
 
 
 class AdminSession:
