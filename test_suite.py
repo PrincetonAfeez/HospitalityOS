@@ -131,6 +131,30 @@ class TestAnalytics(unittest.TestCase):
         self.assertNotIn(self.item_b, reorders)
 
 
+class TestPortfolioPrimitives(unittest.TestCase):
+    """Session / run correlation used by architect portfolio docs."""
+
+    def test_run_id_stable_within_process(self) -> None:
+        from utils import get_run_id, init_run_context
+
+        init_run_context()
+        first = get_run_id()
+        self.assertEqual(get_run_id(), first)
+        self.assertEqual(len(first), 12)
+
+    def test_session_context_holds_domain(self) -> None:
+        from app_context import SessionContext
+        from hospitality_models import FloorMap
+
+        menu = Menu()
+        ledger = DailyLedger()
+        floor = FloorMap(4)
+        ctx = SessionContext(run_id="a" * 12, menu=menu, ledger=ledger, floor=floor, user=None)
+        self.assertIsNone(ctx.user)
+        ctx.user = make_staff()
+        self.assertEqual(ctx.user.staff_id, "EMP-99")
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print(f"{'HOSPITALITY OS v4.0 - FINAL INTEGRATION SUITE':^60}")
