@@ -13,6 +13,26 @@ LOG = logging.getLogger(__name__)
 _io_lock = threading.Lock()
 
 
+def atomic_write_json(file_path: str, data: Any) -> bool:
+    """
+    Write JSON atomically (temp file + os.replace) for restaurant_state, Z-reports, etc.
+    """
+    temp_path = f"{file_path}.tmp"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=4, default=str)
+        os.replace(temp_path, file_path)
+        return True
+    except OSError as exc:
+        LOG.error("atomic_write_json failed %s: %s", file_path, exc)
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        return False
+
+
 def save_to_json(data: Any, filename: str, *, merge_array: bool = False) -> bool:
     """
     Write JSON atomically via temp file + os.replace.
