@@ -1,11 +1,11 @@
 {
     "timestamp": "1774332756.4962573",
-    "last_updated": "2026-03-24T12:45:11.661776",
-    "total_revenue": "33.95",
-    "total_tips": "5.00",
-    "transaction_count": 1,
+    "last_updated": "2026-03-24T13:49:49.976875",
+    "total_revenue": "135.80",
+    "total_tips": "20.00",
+    "transaction_count": 4,
     "inventory_snapshot": {
-        "Classic Burger": 18,
+        "Classic Burger": 12,
         "Salmon Pasta": 10,
         "Draft Beer": 40,
         "Margarita": 15,
