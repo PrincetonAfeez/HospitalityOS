@@ -43,6 +43,7 @@ class Guest(Person):
     is_tax_exempt: bool = False
     is_seated: bool = False
     assigned_table: Optional[int] = None
+    is_walk_in: bool = False
 
     @property
     def is_frequent_noshow(self) -> bool:
@@ -206,4 +207,5 @@ def walk_in_guest_for_table(table_id: int, party_size: int = 1) -> Guest:
         last_name=f"In Table {table_id}",
         phone="0000000000",
         party_size=party_size,
+        is_walk_in=True,
     )
