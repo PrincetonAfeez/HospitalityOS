@@ -7,13 +7,106 @@ and checkout that feeds the DailyLedger + SecurityLog.
 
 import os  # Terminal clear for HUD redraws
 from decimal import Decimal  # Modifier upcharges and money display
+from typing import Optional
 
 from manager_tools import require_manager_auth  # Manager-gated void/comp tools
 
 from hospitality_models import Guest  # Guest-aware cart (tax / gratuity flags)
-from models import Cart, DailyLedger, Menu, Modifier, SecurityLog, Staff, Transaction
+from models import (
+    Cart,
+    DailyLedger,
+    InsufficientStockError,
+    Menu,
+    MenuItem,
+    Modifier,
+    SecurityLog,
+    Staff,
+    Transaction,
+)
 from settings.restaurant_defaults import MAX_MODS  # Cap modifiers per line
 from validator import format_currency, get_int, get_name, get_yes_no, get_decimal_input
+
+
+def resolve_menu_item(menu_brain: Menu, query: str, menu_lookup: dict) -> Optional[MenuItem]:
+    """Exact/unique fuzzy match, else numbered pick when several menu rows match."""
+    stripped = query.strip()
+    master_item = menu_brain.find_item(query) or menu_lookup.get(stripped.lower())
+    if master_item:
+        return master_item
+    cands = menu_brain.list_item_candidates(query)
+    if not cands:
+        return None
+    if len(cands) == 1:
+        return cands[0]
+    print("\nMultiple menu matches:")
+    for i, it in enumerate(cands, 1):
+        print(f"  {i}. {it.name} ({it.category})")
+    pick = get_int("Pick # (0 to cancel): ", 0, len(cands))
+    if pick == 0:
+        return None
+    return cands[pick - 1]
+
+
+def print_pos_help() -> None:
+    print(
+        """
+POS quick help (text UI)
+  1  Add item by name — fuzzy match; pick from list if ambiguous
+  2  Add modifier to the last line item
+  3  View bill / prep summary
+  4  Checkout — payment, tips, loyalty, feedback
+  5  Manager — void line, comp table, line inventory adjust (PIN if not manager)
+  H  Show this help
+  Q  Suspend session (table stays occupied)
+"""
+    )
+
+
+def run_manager_actions(
+    table_num: int,
+    menu_brain: Menu,
+    active_cart: Cart,
+    current_staff: Staff,
+    menu_lookup: dict,
+) -> None:
+    """Void / comp / inventory adjust — wired to manager_tools + require_manager_auth."""
+    while True:
+        print("\n--- MANAGER ACTIONS ---")
+        print(" [1] Void a line item")
+        print(" [2] Comp entire table (clear cart)")
+        print(" [3] Adjust line inventory for a menu item")
+        print(" [0] Back to POS")
+        sub = input("Manager action > ").strip()
+        if sub == "0":
+            return
+        if sub == "1":
+            if not active_cart.items:
+                print("[!] Cart is empty — nothing to void.")
+                input("Press Enter...")
+                continue
+            print(f"\nTable {table_num} — current lines:")
+            for i, line in enumerate(active_cart.items, 1):
+                print(f"  {i}. {line.name}")
+            pick = get_int("Line # to void (0=cancel): ", 0, len(active_cart.items))
+            if pick == 0:
+                continue
+            void_item(current_staff, active_cart, pick - 1)
+        elif sub == "2":
+            if not active_cart.items:
+                print("[!] Cart is already empty.")
+            elif get_yes_no("Comp entire table — clears all lines? (y/n): "):
+                comp_entire_table(current_staff, active_cart)
+        elif sub == "3":
+            name = get_name("Menu item name: ")
+            item = resolve_menu_item(menu_brain, name, menu_lookup)
+            if not item:
+                print("[!] Item not found.")
+            else:
+                new_amt = get_int(f"New LINE inventory for '{item.name}': ", min_val=0)
+                manual_inventory_adjust(current_staff, item, new_amt)
+        else:
+            print("[!] Invalid choice.")
+        input("Press Enter...")
 
 
 def run_pos(
@@ -36,22 +129,31 @@ def run_pos(
         print(" [2] Add Modifier (Sub/Add)")
         print(" [3] View Bill / Print Prep")
         print(" [4] Process Payment & Close")
+        print(" [5] Manager Actions (void / comp / inventory)")
+        print(" [H] Help")
         print(" [Q] Suspend Session (Save for later)")
         print("═" * 45)
 
         choice = input("Select Action > ").strip().upper()
-        if choice == "1":
+        if choice in ("H", "?", "HELP"):
+            print_pos_help()
+            input("\nPress Enter...")
+        elif choice == "1":
             query = get_name("Enter Item Name: ")
-            master_item = menu_brain.find_item(query) or menu_lookup.get(query.lower())
+            master_item = resolve_menu_item(menu_brain, query, menu_lookup)
             if master_item:
                 try:
                     active_cart.add_to_cart(master_item)
                     print(f"✅ {master_item.name} added to Table {table_num}.")
+                except InsufficientStockError as exc:
+                    print(f"❌ {exc}")
                 except Exception as exc:
                     print(f"❌ ERROR: {exc}")
             else:
                 print("❓ Item not found in current Menu.")
             input("\nPress Enter...")
+        elif choice == "5":
+            run_manager_actions(table_num, menu_brain, active_cart, current_staff, menu_lookup)
         elif choice == "2":
             apply_modifier_workflow(active_cart)
         elif choice == "3":
@@ -180,7 +282,9 @@ def comp_entire_table(current_staff: Staff, cart: Cart, authorized_by: str = "N/
 
 
 @require_manager_auth
-def manual_inventory_adjust(current_staff: Staff, item, new_amount: int, authorized_by: str = "N/A") -> None:
+def manual_inventory_adjust(
+    current_staff: Staff, item: MenuItem, new_amount: int, authorized_by: str = "N/A"
+) -> None:
     """Direct line inventory overwrite for miscount corrections."""
     old_val = item.line_inv
     item.line_inv = new_amount
