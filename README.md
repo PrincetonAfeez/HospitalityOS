@@ -1,20 +1,58 @@
-HospitalityOS v4.0: Sprint Summary
-Architect: Princeton Afeez
-Status: Phase 1-5 Refactor Complete
-🛠️ Technical Achievements
-1. Data Integrity & Performance
-•	Menu Optimization: Migrated from list-based scanning to a Dictionary Map, reducing lookup complexity from $O(n)$ to $O(1)$.
-•	Pydantic Integration: Implemented strict data schemas using BaseModel to ensure all JSON state files (Guests, Staff, Tables) are valid and type-safe.
-•	Concurrency Control: Added threading.Lock() to the Shared Brain (storage.py) to prevent data corruption during simultaneous multi-terminal writes.
-2. CRM & Operational Logic
-•	VIP Milestone Tracking: Automated alerts for Guest birthdays and anniversaries within the check-in flow.
-•	Loyalty 2.0: Integrated a point-redemption system directly into the checkout workflow.
-•	Waitlist Accountability: Implemented automated No-Show tagging to identify and flag unreliable guests after 3 missed reservations.
-•	Guest Sentiment: Added a post-payment feedback loop (1-5 star ratings) stored in feedback.json for service recovery.
-3. Security & Forensic Auditing
-•	Manager Overrides: Created a reusable @require_manager_auth decorator to gate high-risk actions.
-•	Hardened POS: Functions for Voids, Comps, and Inventory Adjustments now require a Manager PIN.
-•	Dual-Signature Logging: Enhanced security.log to record a forensic trail linking the Staff ID to the Authorizing Manager ID for every sensitive transaction.
-4. System Reliability
-•	Health Checks: Developed a system-wide validator that scrubs all local JSON databases against Pydantic models upon boot-up to detect and quarantine corrupt data.
+# HospitalityOS v4.0
 
+**Text-only** (console) restaurant operations simulator — front desk, POS, waitlist, manager tools, and file-backed ledger state. Intended as a **system architect portfolio** piece: clear boundaries, documented tradeoffs, and a deliberate **non-production** scope.
+
+## What this is
+
+- Single-process Python CLI with **CSV catalogs** (`menu.csv`, `staff.csv`) and **`restaurant_state.json`** for daily totals and inventory snapshot.
+- **Composition root:** `SessionContext` in `app_context.py` (menu, ledger, floor, user + **run_id** for audit correlation).
+- **Documentation:** start at **[docs/README.md](docs/README.md)** (C4, ADRs, NFR table, threat sketch, demo script).
+
+## What this is not
+
+No web UI, no card processing, no legal payroll — see **[docs/non-goals.md](docs/non-goals.md)**.
+
+## Quick start
+
+```bash
+python setup_os.py          # first-time: folders + seed data + settings template
+python diagnose_paths.py    # optional: paths + CSV/JSON smoke checks
+python launcher.py          # splash + preflight + main
+# or: python main.py
+```
+
+**Staff IDs** live in `data/staff.csv` (`EMP-…`). Login is **ID-only (demo)** — not real authentication. Manager overrides use `settings/manager_auth.json`.
+
+## Portfolio map
+
+| Artifact | Location |
+|----------|----------|
+| C4 diagrams | [docs/c4/overview.md](docs/c4/overview.md) |
+| ADRs | [docs/adr/](docs/adr/) |
+| NFRs | [docs/nfr.md](docs/nfr.md) |
+| Threat sketch | [docs/threat-model.md](docs/threat-model.md) |
+| Module boundaries | [docs/modules.md](docs/modules.md) |
+| Run ID & audit | [docs/observability.md](docs/observability.md) |
+| Demo walkthrough | [docs/DEMO.md](docs/DEMO.md) |
+| Runtime overview | [docs/architecture.md](docs/architecture.md) |
+
+## Tests & CI
+
+```bash
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+CI runs the same via GitHub Actions (`.github/workflows/ci.yml`).
+
+## Dependencies
+
+- `requirements.txt` — `pydantic>=2,<3`
+- `requirements-lock.txt` — optional pinned install
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+*Architect portfolio — Princeton Afeez / HospitalityOS.*
