@@ -5,13 +5,13 @@ Z-reports, labor snapshot helpers, reorder CSV — paths via PathManager.
 
 import csv
 import functools
-import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Optional, TypeVar
 
 from manager_auth import verify_manager_override
-from models import DailyLedger, MenuItem, SecurityLog, Staff
+from models import DailyLedger, SecurityLog, Staff
+from storage import atomic_write_json
 from utils import PathManager, SECURITY_LOG_NAME
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -90,21 +90,18 @@ class ManagerTools:
             ),
         }
 
-        try:
-            with open(report_name, "w", encoding="utf-8") as fh:
-                json.dump(report_data, fh, indent=4)
-
-            SecurityLog.log_event(manager_id, "Z_REPORT_GENERATED", f"Report: {report_name}")
-
-            self.ledger.total_revenue = Decimal("0.00")
-            self.ledger.total_tips = Decimal("0.00")
-            self.ledger.transaction_count = 0
-
-            print(f"[OK] Z-Report archived to {report_name}")
-            return True
-        except OSError as exc:
-            print(f"[X] Z-Report error: {exc}")
+        if not atomic_write_json(report_name, report_data):
+            print("[X] Z-Report write failed")
             return False
+
+        SecurityLog.log_event(manager_id, "Z_REPORT_GENERATED", f"Report: {report_name}")
+
+        self.ledger.total_revenue = Decimal("0.00")
+        self.ledger.total_tips = Decimal("0.00")
+        self.ledger.transaction_count = 0
+
+        print(f"[OK] Z-Report archived to {report_name}")
+        return True
 
     def run_labor_audit(self) -> None:
         """TRAINING / DEMO — estimated labor vs sales (not legal payroll)."""
