@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from models import DailyLedger, Menu, MenuItem, Staff
+from storage import atomic_write_json
 from utils import PathManager, configure_logging, RESTAURANT_STATE_NAME
 
 LOG = logging.getLogger(__name__)
@@ -62,26 +63,35 @@ def load_system_state() -> tuple[Menu, DailyLedger, List[Staff]]:
                     par_level=int(row["par_level"]),
                     line_inv=int(row["line_inv"]),
                 )
+                if item.name in menu.items:
+                    LOG.warning("Duplicate menu name %r — last row wins", item.name)
                 menu.add_item(item)
     except (OSError, KeyError, ValueError) as exc:
         LOG.exception("Menu load failed")
         print(f"[!] Menu Load Error: {exc}")
 
+    if not menu.items:
+        LOG.warning("Menu catalog is empty after load — check menu.csv")
+
     try:
         with open(staff_path, mode="r", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
-            for row in reader:
-                last_name, first_name = row["name"].split(", ", 1)
-                dept_label = row["dept"].strip()
-                member = Staff(
-                    staff_id=row["staff_id"].strip(),
-                    first_name=first_name.strip(),
-                    last_name=last_name.strip(),
-                    dept=dept_label,
-                    role=dept_label,
-                    hourly_rate=row["hourly_rate"],
-                )
-                staff_list.append(member)
+            for row_num, row in enumerate(reader, start=2):
+                try:
+                    last_name, first_name = row["name"].split(", ", 1)
+                    dept_label = row["dept"].strip()
+                    member = Staff(
+                        staff_id=row["staff_id"].strip(),
+                        first_name=first_name.strip(),
+                        last_name=last_name.strip(),
+                        dept=dept_label,
+                        role=dept_label,
+                        hourly_rate=row["hourly_rate"],
+                    )
+                    staff_list.append(member)
+                except (KeyError, ValueError) as exc:
+                    LOG.warning("Skipping staff row %s: %s", row_num, exc)
+                    continue
     except (OSError, KeyError, ValueError) as exc:
         LOG.exception("Staff load failed")
         print(f"[!] Staff Load Error: {exc}")
@@ -120,7 +130,9 @@ def save_system_state(
     if staff_id:
         state_data["staff_id"] = staff_id
 
-    with open(state_path, "w", encoding="utf-8") as fh:
-        json.dump(state_data, fh, indent=4)
-    LOG.info("Saved system state to %s", state_path)
-    print(f"[*] System state synced to: {state_path}")
+    if atomic_write_json(state_path, state_data):
+        LOG.info("Saved system state to %s", state_path)
+        print(f"[*] System state synced to: {state_path}")
+    else:
+        LOG.error("Failed to save system state to %s", state_path)
+        print(f"[X] Failed to save system state")
