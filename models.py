@@ -15,7 +15,7 @@ from typing import Any, List, Optional  # Type hints make IDE help and tests cle
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from utils import PathManager, SECURITY_LOG_NAME, configure_logging
+from utils import PathManager, SECURITY_LOG_NAME, configure_logging, get_run_id
 
 LOG = logging.getLogger(__name__)
 configure_logging()
@@ -58,8 +58,9 @@ class SecurityLog:
     def log_event(staff_id: str, action: str, details: str, manager_id: str = "SYSTEM") -> None:
         """Build one log line and append it to data/logs/security.log."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rid = get_run_id()[:8]
         log_entry = (
-            f"[{timestamp}] STAFF: {staff_id:<8} | AUTH: {manager_id:<8} | "
+            f"[{timestamp}] RUN:{rid} | STAFF: {staff_id:<8} | AUTH: {manager_id:<8} | "
             f"ACTION: {action:<15} | MSG: {details}\n"
         )
         log_path = PathManager.get_path(SECURITY_LOG_NAME)
@@ -157,45 +158,46 @@ class Menu(BaseModel):
         """Register one item; name becomes the dictionary key."""
         self.items[item.name] = item
 
-    def find_item(self, name: str, include_inactive: bool = False) -> Optional[MenuItem]:
-        """
-        1) Exact key 2) Case-insensitive full name 3) Unique substring 4) Unique token match.
-        Matches digitalpos + main when both call this helper.
-        """
+    def list_item_candidates(self, name: str, include_inactive: bool = False) -> List[MenuItem]:
+        """All menu rows matching fuzzy rules (exact, case, substring, tokens) — may be multiple."""
         key = name.strip()
         if not key:
-            return None
+            return []
 
         def ok(it: MenuItem) -> bool:
             return include_inactive or it.is_active
 
-        if key in self.items:
-            item = self.items[key]
-            return item if ok(item) else None
+        seen: set[str] = set()
+        out: List[MenuItem] = []
+
+        def add(it: MenuItem) -> None:
+            if it.name not in seen and ok(it):
+                seen.add(it.name)
+                out.append(it)
 
         lowered = key.lower()
-        for stored_name, item in self.items.items():
-            if stored_name.lower() == lowered and ok(item):
-                return item
-
-        substr_matches = [
-            it
-            for sn, it in self.items.items()
-            if lowered in sn.lower() and ok(it)
-        ]
-        if len(substr_matches) == 1:
-            return substr_matches[0]
-
+        if key in self.items:
+            add(self.items[key])
+        for sn, it in self.items.items():
+            if sn.lower() == lowered:
+                add(it)
+        for sn, it in self.items.items():
+            if lowered in sn.lower():
+                add(it)
         tokens = [t for t in lowered.split() if len(t) > 1]
         if tokens:
-            token_hits = [
-                it
-                for it in self.items.values()
-                if ok(it) and all(t in it.name.lower() for t in tokens)
-            ]
-            if len(token_hits) == 1:
-                return token_hits[0]
+            for it in self.items.values():
+                if ok(it) and all(t in it.name.lower() for t in tokens):
+                    add(it)
+        return out
 
+    def find_item(self, name: str, include_inactive: bool = False) -> Optional[MenuItem]:
+        """
+        Unique match only; if multiple candidates exist, returns None (use POS disambiguation).
+        """
+        cands = self.list_item_candidates(name, include_inactive=include_inactive)
+        if len(cands) == 1:
+            return cands[0]
         return None
 
 
