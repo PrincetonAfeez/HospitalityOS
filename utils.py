@@ -1,14 +1,32 @@
 """
 HospitalityOS v4.0 - Universal Utilities
-Path resolution, logging bootstrap, and UTF-8 console hints for Windows.
+Path resolution, logging bootstrap, UTF-8 console hints, and run correlation ID.
 """
 
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
+from typing import Optional
 
 LOG = logging.getLogger("hospitalityos.utils")
+
+# Correlates audit lines and log messages within one process (see docs/observability.md).
+_run_id: Optional[str] = None
+
+
+def init_run_context() -> str:
+    """Generate and store a run_id once per process; safe to call multiple times."""
+    global _run_id
+    if _run_id is None:
+        _run_id = uuid.uuid4().hex[:12]
+    return _run_id
+
+
+def get_run_id() -> str:
+    """Return current run_id, initializing if needed (e.g. tests calling SecurityLog directly)."""
+    return init_run_context()
 
 # Standard basenames — use with PathManager.get_path(...) everywhere (no hardcoded paths).
 SECURITY_LOG_NAME = "security.log"
@@ -59,20 +77,20 @@ class PathManager:
     @classmethod
     def get_path(cls, filename: str) -> str:
         """
-        Route by convention: logs, Z-reports, settings-only JSON, CSV/data JSON, scripts.
+        Route by basename only (ignore directory prefixes) for consistent resolution.
         """
         cls._ensure_dirs()
-        base = os.path.basename(filename)
+        base = os.path.basename(filename.strip())
 
         if base == MANAGER_AUTH_NAME:
             target = cls.SETTINGS_DIR / base
         elif base in LOG_CSV_NAMES:
             target = cls.LOG_DIR / base
-        elif filename.endswith(".log") or "Z_REPORT" in filename:
+        elif base.endswith(".log") or "Z_REPORT" in base:
             target = cls.LOG_DIR / base
         elif base.endswith(".py") and base != "main.py":
             target = cls.SETTINGS_DIR / base
-        elif filename.endswith(".csv") or filename.endswith(".json"):
+        elif base.endswith(".csv") or base.endswith(".json"):
             target = cls.DATA_DIR / base
         else:
             target = cls.BASE_DIR / base
