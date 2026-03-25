@@ -80,10 +80,6 @@ def save_new_inventory_state(inventory_list):
 def load_sales_data():
     """Pulls current POS snapshots to reconcile 'Expected' vs 'Actual' stock."""
     filename = PathManager.get_path(RESTAURANT_STATE_NAME)
-    
-    # Check if POS is still active to prevent data collisions (Phase 4 UX)
-    if os.path.exists(PathManager.get_path("active_sessions.json")):
-        print("⚠️  SYSTEM ALERT: Active tables detected. Audit results may vary from final totals.")
 
     try:
         with open(filename, "r") as f:
