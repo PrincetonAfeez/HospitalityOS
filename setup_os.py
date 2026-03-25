@@ -69,7 +69,12 @@ def setup_environment() -> None:
     if not auth_path.exists():
         auth_path.write_text(
             json.dumps(
-                {"override_pin": "5555", "note": "Demo only — change PIN and use verify_manager in production."},
+                {
+                    "override_pin": "5555",
+                    "pins": {},
+                    "_comment": "Optional per-staff PINs: {\"EMP-M01\": \"secret\"}. Values may use sha256:hexdigest.",
+                    "note": "Demo only — change PIN and use verify_manager in production.",
+                },
                 indent=4,
             ),
             encoding="utf-8",
